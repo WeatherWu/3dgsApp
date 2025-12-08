@@ -1,0 +1,364 @@
+/* PhotoReconstruction组件特有样式 - 高级黑白主题 */
+.photo-reconstruction {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-bottom: 80px; /* 为底部导航栏留出空间 */
+}
+
+/* 页面头部样式 */
+.page-header {
+  text-align: center;
+  margin-bottom: 32px;
+  padding: 36px 24px 0;
+  position: relative;
+}
+
+.page-header::after {
+  content: '';
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 3px;
+}
+
+/* 状态指示器样式 */
+.status-indicator {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.status-indicator.recording {
+  animation: pulse 1.5s infinite;
+}
+
+.status-indicator i {
+  font-size: 12px;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.app-container {
+  background: var(--color-surface);
+  border-radius: 18px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--color-border);
+  padding: 24px;
+  margin-bottom: 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-container:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+/* 按钮组样式 - 高级黑白主题 */
+.button-group {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 32px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 8px;
+}
+
+/* 主按钮样式 */
+.capture-button,
+.reconstruct-button {
+  background: var(--color-primary);
+  color: white;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 150px;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.5px;
+}
+
+.capture-button::before,
+.reconstruct-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: all 0.6s ease;
+}
+
+.capture-button:hover:not(:disabled)::before,
+.reconstruct-button:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.capture-button:hover:not(:disabled),
+.reconstruct-button:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* 次要按钮样式 */
+.upload-button {
+  background: var(--color-secondary);
+  color: white;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 150px;
+  justify-content: center;
+  letter-spacing: 0.5px;
+}
+
+.reset-button:hover:not(:disabled) {
+  background: #777777;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* 按钮禁用状态 */
+.capture-button:disabled,
+.upload-button:disabled,
+.reconstruct-button:disabled,
+.reset-button:disabled {
+    background: var(--color-disabled) !important;
+    color: #ffffff;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+    opacity: 0.6;
+}
+
+/* 第三级按钮样式 */
+.reset-button {
+  background: var(--color-tertiary);
+  color: white;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 150px;
+  justify-content: center;
+  letter-spacing: 0.5px;
+}
+
+.reset-button:hover:not(:disabled) {
+  background: #888888;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(153, 153, 153, 0.15);
+}
+
+/* 视频画廊样式 */
+.video-gallery {
+  margin-top: 30px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+}
+
+.video-gallery h2 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* 视频项样式 */
+.video-item {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e0e0e0;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.video-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #cccccc;
+}
+
+.video-item.active {
+  border-color: #000000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* 视频预览样式 */
+.video-preview {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 56.25%;
+  background: #f0f0f0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.video-preview video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-preview img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* 视频控制条优化 */
+.video-preview video::-webkit-media-controls {
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 0 0 8px 8px;
+}
+
+.video-preview video::-webkit-media-controls-play-button {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+}
+
+/* 删除按钮样式 */
+.delete-button {
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.delete-button:hover {
+  background: #da190b;
+  transform: scale(1.1);
+}
+
+/* 进度容器样式 */
+.progress-container {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  margin-bottom: 20px;
+}
+
+.progress-container h3 {
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+/* 模型容器样式 */
+.model-container {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.model-container h3 {
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .photo-reconstruction {
+    padding: 10px;
+  }
+    
+    .app-container {
+    padding: 16px;
+    border-radius: 12px;
+  }
+  
+  .button-group {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .capture-button, .upload-button, .reconstruct-button, .reset-button {
+    width: 100%;
+    min-width: unset;
+  }
+  
+  .video-gallery {
+    padding: 16px;
+  }
+  
+  .video-item {
+    padding: 12px;
+  }
+  
+  .modal-content {
+    width: 95%;
+    padding: 16px;
+  }
+  
+  .model-container {
+    min-height: 300px;
+    padding: 16px;
+  }
+}
+
