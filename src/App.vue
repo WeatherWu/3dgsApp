@@ -18,37 +18,42 @@ const activeNav = computed(() => route.path)
 
 // 检查是否可以跳转到3D模型页面
 const canNavigateToSupersplat = computed(() => {
+  // 获取选中的视频索引和当前PLY文件URL
   const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
   const currentPlyUrl = localStorage.getItem('currentPlyUrl')
   
-  // 只有当选中了视频并且有对应的PLY文件时，才能跳转到3D模型页面
-  return selectedVideoIndex !== null && currentPlyUrl !== '' && currentPlyUrl !== null
+  // 默认允许访问第三个页面
+  // 用户可以先跳转到3D模型页面，然后再加载模型
+  return true;
 })
 
 // 导航到指定路径
 const navigateTo = (path) => {
-  // 如果是跳转到3D模型页面，检查是否可以跳转
-  if (path === '/supersplat' && !canNavigateToSupersplat.value) {
-    return
-  }
-  
+  // 移除导航限制，允许直接跳转到任何页面
   router.push(path)
 }
 
-// 组件挂载时检查localStorage中的数据
+// 组件挂载时
 onMounted(() => {
+  // 获取选中的视频索引和当前PLY文件URL
   const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
-  if (selectedVideoIndex !== null) {
+  const currentPlyUrl = localStorage.getItem('currentPlyUrl')
+  
+  // 检查是否是有效的默认状态（使用默认PLY文件）
+  const isValidDefaultState = selectedVideoIndex === 'default' && currentPlyUrl
+  
+  // 检查是否是有效的视频索引状态（具体数字索引且有对应PLY文件）
+  let isValidVideoState = false
+  if (selectedVideoIndex !== null && selectedVideoIndex !== 'default') {
+    const plyUrl = localStorage.getItem(`plyUrl_${selectedVideoIndex}`)
+    isValidVideoState = !!plyUrl
+  }
+  
+  // 对于default状态，保留已设置的currentPlyUrl
+  // 对于视频状态，确保currentPlyUrl正确
+  if (isValidVideoState) {
     const plyUrl = localStorage.getItem(`plyUrl_${selectedVideoIndex}`)
     localStorage.setItem('currentPlyUrl', plyUrl || '')
-  }
-})
-
-// 监听路由变化
-watch(() => route.path, (newPath) => {
-  // 如果导航到3D模型页面，但没有选中视频或没有PLY文件，自动跳回视频页面
-  if (newPath === '/supersplat' && !canNavigateToSupersplat.value) {
-    router.push('/video')
   }
 })
 </script>
@@ -56,7 +61,7 @@ watch(() => route.path, (newPath) => {
 <template>
   <div class="app">
     <!-- 主内容区域 -->
-    <div class="main-content">
+    <div class="main-content" :class="{ 'full-height': route.path === '/supersplat' }">
       <router-view />
     </div>
     
@@ -89,13 +94,28 @@ watch(() => route.path, (newPath) => {
   background-color: #f8f8f8;
   color: #333;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  /* 为移动设备状态栏留出空间 */
+  padding-top: env(safe-area-inset-top);
+  box-sizing: border-box;
 }
 
 .main-content {
   width: 100%;
-  height: calc(100vh - 80px);
-  overflow-y: auto;
-  padding: 20px;
+  height: calc(100vh - 80px - env(safe-area-inset-top));
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.main-content.full-height {
+  height: calc(100vh - env(safe-area-inset-top));
+}
+
+/* 3D模型页面专用样式 - 移除内边距让canvas完全平铺 */
+.main-content.full-height {
+  padding: 0;
+  overflow: hidden;
 }
 
 * {
@@ -177,11 +197,13 @@ watch(() => route.path, (newPath) => {
 .nav-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none; /* 真正阻止点击事件 */
 }
 
 .nav-item.disabled:hover {
   background-color: transparent;
   color: #666;
+  pointer-events: none; /* 确保hover状态也不响应 */
 }
 
 .nav-item.active .nav-label {

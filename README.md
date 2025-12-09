@@ -7,3 +7,5 @@ Thanks to [supersplat-viewer](https://github.com/playcanvas/supersplat-viewer) f
 Thanks to `trae` for the help.
 
 And it can build to a android app.
+
+The IP of the server is set in the `vite.config.js`.

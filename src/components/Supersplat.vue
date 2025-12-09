@@ -18,8 +18,9 @@ const loadCurrentPlyUrl = () => {
   if (plyUrl && plyUrl !== '') {
     splatUrl.value = plyUrl
   } else {
-    // 默认路径（如果没有选中的视频或PLY文件）
-    splatUrl.value = '/supersplat-viewer/scene.compressed.ply'
+    // 如果没有选中的视频或PLY文件，不设置默认路径
+    // 此时isLoading会保持为true，直到有有效的PLY文件被选择
+    splatUrl.value = null
   }
 }
 
@@ -53,29 +54,7 @@ const loadModel = (url) => {
   }
 }
 
-// 处理文件选择
-const handleFileSelect = (event) => {
-  const file = event.target.files[0]
-  if (!file) return
 
-  // 检查文件类型
-  const validExtensions = ['.splat', '.ply']
-  const fileName = file.name.toLowerCase()
-  const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
-
-  if (!isValidType) {
-    error.value = '请选择 .splat 或 .ply 格式的模型文件'
-    return
-  }
-
-  // 创建临时URL
-  const fileUrl = URL.createObjectURL(file)
-  splatUrl.value = fileUrl
-  loadModel(fileUrl)
-
-  // 清除文件输入，以便下次可以选择相同的文件
-  event.target.value = ''
-}
 
 // 初始化PlayCanvas应用
 const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
@@ -212,17 +191,31 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
     // 定义窗口大小变化处理函数
     handleResize = () => {
       if (appInstance && containerRef.value) {
-        const width = containerRef.value.offsetWidth
-        const height = containerRef.value.offsetHeight
-        appInstance.resizeCanvas(width, height)
-        console.log('Canvas尺寸调整为:', width, 'x', height)
+        // 获取容器的实际尺寸
+        const rect = containerRef.value.getBoundingClientRect()
+        const width = rect.width
+        const height = rect.height
         
-        // 手动设置canvas元素的尺寸
+        // 获取设备像素比，确保在高分辨率屏幕上显示清晰
+        const dpr = window.devicePixelRatio || 1
+        
+        // 调整canvas的CSS尺寸（显示尺寸）
         if (canvasRef.value) {
-          canvasRef.value.width = width
-          canvasRef.value.height = height
-          console.log('Canvas元素尺寸设置为:', canvasRef.value.width, 'x', canvasRef.value.height)
+          // 设置CSS尺寸为容器的实际尺寸
+          canvasRef.value.style.width = `${width}px`
+          canvasRef.value.style.height = `${height}px`
+          
+          // 设置canvas的实际像素尺寸（考虑设备像素比）
+          canvasRef.value.width = Math.floor(width * dpr)
+          canvasRef.value.height = Math.floor(height * dpr)
+          console.log('Canvas CSS尺寸:', width, 'x', height)
+          console.log('Canvas像素尺寸:', canvasRef.value.width, 'x', canvasRef.value.height)
+          console.log('设备像素比:', dpr)
         }
+        
+        // 调整PlayCanvas应用的画布大小
+        appInstance.resizeCanvas(width, height)
+        console.log('PlayCanvas画布尺寸调整为:', width, 'x', height)
       }
     }
 
@@ -247,7 +240,15 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
 onMounted(async () => {
   // 等待DOM更新完成
   await nextTick()
-  await initPlayCanvasApp()
+  
+  // 只有当有有效的PLY文件URL时，才初始化PlayCanvas应用
+  if (splatUrl.value) {
+    await initPlayCanvasApp()
+  } else {
+    // 如果没有有效的PLY文件URL，保持加载状态或显示错误信息
+    error.value = '请先在视频页面选择一个已重建完成的视频或加载默认PLY模型'
+    isLoading.value = false
+  }
 })
 
 // 组件卸载时清理
@@ -303,21 +304,7 @@ onUnmounted(() => {
 
 <template>
   <div class="supersplat-container">
-    <!-- 文件选择按钮 -->
-    <div class="file-selector-container">
-      <label for="model-file" class="file-selector-button">
-        <i class="fas fa-upload"></i>
-        <span>选择模型文件</span>
-        <input 
-          id="model-file" 
-          type="file" 
-          accept=".splat,.ply" 
-          class="file-input" 
-          @change="handleFileSelect"
-        />
-      </label>
-      <span v-if="splatUrl" class="file-name">{{ splatUrl.split('/').pop() }}</span>
-    </div>
+  
     
     <!-- 3D渲染容器 -->
     <div ref="containerRef" class="render-container">
@@ -346,7 +333,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 让容器占据整个页面 */
+/* 让容器占据整个主内容区域 */
 .supersplat-container {
   width: 100%;
   height: 100%;
@@ -357,56 +344,21 @@ onUnmounted(() => {
   color: #000;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
-/* 文件选择器样式 */
-.file-selector-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 15px;
-  background-color: rgba(0, 0, 0, 0.8);
-  z-index: 10;
-}
-
-.file-selector-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 24px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.file-selector-button:hover {
-  background-color: #45a049;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-}
-
-.file-input {
-  display: none;
-}
-
-.file-name {
-  margin-left: 15px;
-  font-size: 14px;
-  color: #ddd;
-  max-width: 300px;
+/* 渲染容器样式 - 占据整个容器空间 */
+.render-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  background: #fff;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  box-sizing: border-box;
 }
 
-/* Canvas样式 */
+/* Canvas样式 - 扩展到整个渲染容器 */
 .supersplat-canvas {
   width: 100%;
   height: 100%;
@@ -414,20 +366,7 @@ onUnmounted(() => {
   margin: 0;
   padding: 0;
   background-color: #fff;
-}
-
-/* 文件选择按钮图标 */
-.file-selector-button i {
-  font-size: 18px;
-}
-
-/* 渲染容器样式 - 占据大部分空间 */
-.render-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background: #fff;
-  overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* 加载状态样式 */

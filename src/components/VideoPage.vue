@@ -1,5 +1,12 @@
 <template>
-  <div class="video-page">
+    <!-- 加载默认PLY文件选项（顶部居中，适合手机操作） -->
+    <div class="load-default-ply-section">
+      <button class="load-default-btn" @click="loadDefaultPly">
+        <i class="fas fa-download"></i>
+        加载默认PLY模型
+      </button>
+    </div>
+    
     <div class="page-header">
       <h1><i class="fas fa-video"></i> 视频管理</h1>
       <p class="page-description">查看和管理所有视频（录制和上传）</p>
@@ -104,9 +111,6 @@
         </div>
       </div>
     </div>
-
-c
-  </div>
 </template>
 
 <script setup>
@@ -137,15 +141,7 @@ const selectVideo = (index) => {
   localStorage.setItem('currentPlyUrl', plyUrl || '')
 }
 
-// Three.js相关变量
-let scene, camera, renderer
-let pointCloud
-let mouseDown = false
-let lastMouseX = 0
-let lastMouseY = 0
-let rotationX = 0
-let rotationY = 0
-let scale = 1
+
 
 // 从本地存储加载视频
 const loadVideos = () => {
@@ -160,10 +156,47 @@ const loadVideos = () => {
         videos.value = []
       }
       
-      // 为每个视频生成缩略图
-      videos.value.forEach((video, index) => {
-        generateThumbnail(video, index)
-      })
+      // 等待DOM更新后执行后续操作
+      setTimeout(() => {
+        // 为每个视频生成缩略图
+        videos.value.forEach((video, index) => {
+          generateThumbnail(video, index)
+        })
+        
+        // 从本地存储加载重建状态
+        const savedStatuses = localStorage.getItem('reconstructStatuses')
+        let statusesObj = {}
+        if (savedStatuses) {
+          statusesObj = JSON.parse(savedStatuses)
+        }
+        
+        // 为每个视频加载或初始化重建状态
+        videos.value.forEach((_, index) => {
+          // 检查是否存在PLY文件URL，如果存在则标记为已完成
+          const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+          if (plyUrl) {
+            updateReconstructStatus(index, 'completed', 100)
+          } else {
+            // 使用本地存储的状态或默认为未开始
+            const savedStatus = statusesObj[index]
+            if (savedStatus) {
+              updateReconstructStatus(index, savedStatus.status, savedStatus.progress)
+            } else {
+              updateReconstructStatus(index, 'not_started', 0)
+            }
+          }
+        })
+        
+        // 检查是否需要处理路由参数（自动重建）
+        if (route.query.autoReconstruct === 'true') {
+          const videoIndex = parseInt(route.query.videoIndex) || videos.value.length - 1
+          if (videoIndex >= 0 && videoIndex < videos.value.length) {
+            startReconstruction(videoIndex)
+            // 清除查询参数，避免重复触发
+            router.replace({ query: {} })
+          }
+        }
+      }, 0)
     } else {
       videos.value = []
     }
@@ -221,275 +254,31 @@ const closeVideoPlayer = () => {
   currentVideo.value = ''
 }
 
-// 三维重建视频
-const reconstructVideo = (videoUrl) => {
-  currentReconstructVideo.value = videoUrl
-  show3DReconstruct.value = true
-  isProcessing.value = false
-  progress.value = 0
-  show3DModel.value = false
-  cleanupScene()
-}
 
-// 关闭3D重建弹窗
-const close3DReconstruct = () => {
-  show3DReconstruct.value = false
-  currentReconstructVideo.value = ''
-  isProcessing.value = false
-  show3DModel.value = false
-  cleanupScene()
-}
 
-// 通用的3D重建核心函数
-const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) => {
-  try {
-    // 1. 从视频URL获取视频文件
-    const videoBlob = await fetch(videoUrl).then(res => res.blob())
-    const formData = new FormData()
-    formData.append('video', videoBlob, 'reconstruction_video.mp4')
-    
-    // 2. 上传视频到后端
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const uploadResponse = await fetch(`${apiBaseUrl}/api/reconstruct`, {
-      method: 'POST',
-      body: formData
-    })
-    
-    if (!uploadResponse.ok) {
-      throw new Error('视频上传失败')
-    }
-    
-    // 3. 获取任务ID
-    const taskData = await uploadResponse.json()
-    const taskId = taskData.taskId
-    
-    // 4. 轮询检查任务状态
-    let taskStatus = 'processing'
-    while (taskStatus === 'processing') {
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      const statusResponse = await fetch(`/api/task/${taskId}`)
-      const statusData = await statusResponse.json()
-      
-      taskStatus = statusData.status
-      const progress = statusData.progress || 0
-      
-      // 调用进度更新回调
-      if (onProgressUpdate) {
-        onProgressUpdate(progress)
-      }
-      
-      if (taskStatus === 'error') {
-        throw new Error('3D重建失败: ' + (statusData.message || '未知错误'))
-      }
-    }
-    
-    // 5. 任务完成，获取PLY文件URL
-    const plyUrl = taskData.resultUrl
-    
-    // 调用完成回调
-    if (onComplete) {
-      onComplete(plyUrl)
-    }
-    
-    return plyUrl
-    
-  } catch (error) {
-    console.error(`重建失败:`, error)
-    throw error
-  }
-}
 
-// 开始3D重建（弹窗内使用）
-const start3DReconstruction = async () => {
-  if (!currentReconstructVideo.value) return
-  
-  try {
-    isProcessing.value = true
-    progress.value = 0
-    show3DModel.value = false
-    
-    await perform3DReconstruction(
-      currentReconstructVideo.value,
-      (newProgress) => {
-        progress.value = newProgress
-      },
-      (plyUrl) => {
-          progress.value = 100
-          localStorage.setItem('latestPlyUrl', plyUrl)
-          
-          // 如果当前正在重建的视频是选中的视频，更新currentPlyUrl
-          if (selectedVideoIndex.value !== null && videos.value[selectedVideoIndex.value] === currentReconstructVideo.value) {
-            localStorage.setItem('currentPlyUrl', plyUrl)
-          }
-          
-          setTimeout(() => {
-            show3DModel.value = true
-            isProcessing.value = false
-          }, 500)
-        }
-    )
-  } catch (err) {
-    console.error('3D重建失败:', err)
-    alert('3D重建失败: ' + err.message)
-    isProcessing.value = false
-  }
-}
 
-// 初始化3D场景
-const init3DScene = () => {
-  // 创建场景
-  scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xf0f0f0)
-  
-  // 创建相机
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-  camera.position.z = 5
-  
-  // 创建渲染器
-  renderer = new THREE.WebGLRenderer({ antialias: true })
-  renderer.setSize(400, 300)
-  
-  // 将渲染器添加到DOM
-  const container = document.getElementById('model-container')
-  if (container) {
-    container.innerHTML = ''
-    container.appendChild(renderer.domElement)
-  }
-  
-  // 添加环境光
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
-  scene.add(ambientLight)
-  
-  // 添加方向光
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
-  directionalLight.position.set(1, 1, 1)
-  scene.add(directionalLight)
-  
-  // 创建点云（模拟3DGS模型）
-  createPointCloud()
-  
-  // 添加鼠标/触摸事件监听
-  setupTouchControls()
-  
-  // 开始渲染循环
-  const animate = () => {
-    requestAnimationFrame(animate)
-    
-    // 更新模型旋转
-    if (pointCloud) {
-      pointCloud.rotation.y = rotationY
-      pointCloud.rotation.x = rotationX
-      pointCloud.scale.set(scale, scale, scale)
-    }
-    
-    renderer.render(scene, camera)
-  }
-  animate()
-}
-
-// 创建点云
-const createPointCloud = () => {
-  const geometry = new THREE.BufferGeometry()
-  const points = []
-  const colors = []
-  
-  // 生成随机点云数据
-  for (let i = 0; i < 1000; i++) {
-    const x = (Math.random() - 0.5) * 4
-    const y = (Math.random() - 0.5) * 4
-    const z = (Math.random() - 0.5) * 4
-    
-    // 简单的形状模拟（球体）
-    const distance = Math.sqrt(x * x + y * y + z * z)
-    if (distance < 1.5 && distance > 0.8) {
-      points.push(x, y, z)
-      
-      // 颜色渐变
-      const intensity = 0.5 + 0.5 * Math.sin(z * 2)
-      colors.push(intensity, intensity * 0.8, intensity * 0.6)
-    }
-  }
-  
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  
-  const material = new THREE.PointsMaterial({
-    size: 0.02,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.8
-  })
-  
-  pointCloud = new THREE.Points(geometry, material)
-  scene.add(pointCloud)
-}
-
-// 设置触摸控制
-const setupTouchControls = () => {
-  const container = document.getElementById('model-container')
-  if (!container) return
-  
-  // 鼠标事件
-  container.addEventListener('mousedown', (e) => {
-    mouseDown = true
-    lastMouseX = e.clientX
-    lastMouseY = e.clientY
-  })
-  
-  window.addEventListener('mousemove', (e) => {
-    if (!mouseDown) return
-    
-    const deltaX = e.clientX - lastMouseX
-    const deltaY = e.clientY - lastMouseY
-    
-    rotationY += deltaX * 0.01
-    rotationX += deltaY * 0.01
-    
-    lastMouseX = e.clientX
-    lastMouseY = e.clientY
-  })
-  
-  window.addEventListener('mouseup', () => {
-    mouseDown = false
-  })
-}
-
-// 清理3D场景
-const cleanupScene = () => {
-  if (renderer) {
-    renderer.dispose()
-    const container = document.getElementById('model-container')
-    if (container) {
-      container.innerHTML = ''
-    }
-    
-    // 清理场景和相机
-    if (scene) {
-      scene.clear()
-    }
-    camera = null
-    scene = null
-    renderer = null
-    pointCloud = null
-  }
-  
-  // 重置控制变量
-  rotationX = 0
-  rotationY = 0
-  scale = 1
-}
-
-// 更新重建状态
+// 更新重建状态并保存到本地存储
 const updateReconstructStatus = (videoIndex, status, progress = 0) => {
+  const newStatus = {
+    status, // 'not_started', 'processing', 'completed', 'error'
+    progress, // 0-100
+    timestamp: new Date().toLocaleString()
+  }
+  
   reconstructStatuses.value = {
     ...reconstructStatuses.value,
-    [videoIndex]: {
-      status, // 'not_started', 'processing', 'completed', 'error'
-      progress, // 0-100
-      timestamp: new Date().toLocaleString()
-    }
+    [videoIndex]: newStatus
   }
+  
+  // 保存到本地存储
+  const savedStatuses = localStorage.getItem('reconstructStatuses')
+  let statusesObj = {}
+  if (savedStatuses) {
+    statusesObj = JSON.parse(savedStatuses)
+  }
+  statusesObj[videoIndex] = newStatus
+  localStorage.setItem('reconstructStatuses', JSON.stringify(statusesObj))
 }
 
 // 获取重建状态显示文本
@@ -512,6 +301,65 @@ const getReconstructStatusColor = (status) => {
     'error': '#ff4d4f'
   }
   return colorMap[status] || '#666'
+}
+
+// 使用环境变量定义后端API地址
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
+// 通用的3D重建核心函数
+const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) => {
+  try {
+    // 1. 从视频URL获取视频文件
+    const videoResponse = await fetch(videoUrl)
+    const videoBlob = await videoResponse.blob()
+    
+    // 2. 创建FormData
+    const formData = new FormData()
+    formData.append('video', videoBlob, 'video.mp4')
+    
+    // 3. 发送视频到后端进行3D重建
+    const response = await fetch(`${apiBaseUrl}/api/reconstruct`, {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (!response.ok) {
+      throw new Error('视频上传失败')
+    }
+    
+    const result = await response.json()
+    const taskId = result.task_id
+    
+    // 4. 轮询重建进度
+    const checkProgress = async () => {
+      const statusResponse = await fetch(`${apiBaseUrl}/api/task/${taskId}`)
+      const statusData = await statusResponse.json()
+      
+      let taskStatus = statusData.status
+      const progress = statusData.progress || 0
+      
+      // 调用进度更新回调
+      onProgressUpdate(progress)
+      
+      // 如果任务未完成，继续轮询
+      if (taskStatus !== 'completed' && taskStatus !== 'failed') {
+        setTimeout(checkProgress, 1000)
+      } else if (taskStatus === 'completed') {
+        // 任务完成，获取PLY文件URL
+        const plyUrl = statusData.ply_url
+        onComplete(plyUrl)
+      } else {
+        throw new Error('3D重建失败')
+      }
+    }
+    
+    // 开始轮询
+    checkProgress()
+    
+  } catch (error) {
+    console.error('3D重建过程中发生错误:', error)
+    throw error
+  }
 }
 
 // 开始重建（列表中直接使用）
@@ -546,35 +394,94 @@ const startReconstruction = async (videoIndex) => {
 
 // 重置重建状态
 const resetReconstructStatus = (videoIndex) => {
+  // 更新状态为未开始
   updateReconstructStatus(videoIndex, 'not_started', 0)
+  
+  // 删除对应的PLY文件URL
+  localStorage.removeItem(`plyUrl_${videoIndex}`)
+  
+  // 如果该视频是当前选中的视频，也删除currentPlyUrl
+  if (selectedVideoIndex.value === videoIndex) {
+    localStorage.removeItem('currentPlyUrl')
+  }
 }
 
-// 监听路由变化，检测是否需要自动重建
-watch(() => route.query, (newQuery) => {
-  if (newQuery.autoReconstruct === 'true' && videos.value.length > 0) {
-    // 自动重建最新视频（最后一个视频）
-    const latestVideoIndex = videos.value.length - 1
-    startReconstruction(latestVideoIndex)
-    
-    // 清除查询参数，避免重复触发
-    router.replace({ query: {} })
-  }
-}, { immediate: true })
+// 加载默认PLY文件
+const loadDefaultPly = () => {
+  // 设置默认PLY文件的URL
+  const defaultPlyUrl = '/supersplat-viewer/scene.compressed.ply'
+  localStorage.setItem('currentPlyUrl', defaultPlyUrl)
+  
+  // 设置默认的selectedVideoIndex，确保底栏可用
+  localStorage.setItem('selectedVideoIndex', 'default')
+  
+  // 同时更新本地响应式变量，确保状态同步
+  selectedVideoIndex.value = 'default'
+  
+  // 直接跳转，不再需要复杂的延迟和检查
+  // 模型将在Supersplat.vue页面中加载
+  router.push('/supersplat')
+}
 
 // 组件挂载时初始化所有视频重建状态
 onMounted(() => {
   loadVideos()
-  // 初始化所有视频重建状态为未开始
-  videos.value.forEach((_, index) => {
-    updateReconstructStatus(index, 'not_started', 0)
-  })
+  
+  // 只有当不是默认模式时，才重置选择状态到默认值
+  const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
+  if (currentSelectedIndex !== 'default') {
+    selectedVideoIndex.value = null
+    localStorage.removeItem('selectedVideoIndex')
+    localStorage.removeItem('currentPlyUrl')
+  } else {
+    selectedVideoIndex.value = 'default'
+  }
 })
 
 // 删除视频
 const deleteVideo = (index) => {
   if (confirm('确定要删除这个视频吗？')) {
-    videos.value.splice(index, 1)
-    localStorage.setItem('photoReconstructionVideos', JSON.stringify(videos.value))
+    // 1. 删除被删除视频的PLY文件URL
+    localStorage.removeItem(`plyUrl_${index}`)
+    
+    // 2. 获取当前的重建状态
+    const savedStatuses = localStorage.getItem('reconstructStatuses')
+    let statusesObj = {};
+    if (savedStatuses) {
+      statusesObj = JSON.parse(savedStatuses);
+    }
+    
+    // 3. 删除被删除视频的重建状态
+    delete statusesObj[index];
+    
+    // 4. 更新后续视频的索引和对应的PLY文件URL
+    const totalVideos = videos.value.length;
+    for (let i = index + 1; i < totalVideos; i++) {
+      // 更新PLY文件URL的键
+      const plyUrl = localStorage.getItem(`plyUrl_${i}`);
+      if (plyUrl) {
+        localStorage.setItem(`plyUrl_${i - 1}`, plyUrl);
+        localStorage.removeItem(`plyUrl_${i}`);
+      }
+      
+      // 更新重建状态的键
+      if (statusesObj[i]) {
+        statusesObj[i - 1] = statusesObj[i];
+        delete statusesObj[i];
+      }
+    }
+    
+    // 5. 保存更新后的重建状态
+    localStorage.setItem('reconstructStatuses', JSON.stringify(statusesObj));
+    
+    // 6. 删除视频
+    videos.value.splice(index, 1);
+    
+    // 7. 更新本地存储中的视频列表
+    localStorage.setItem('photoReconstructionVideos', JSON.stringify(videos.value));
+    
+    // 8. 重新生成缩略图和更新重建状态
+    loadVideos();
   }
 }
 
@@ -584,7 +491,7 @@ const goToHome = () => {
 }
 
 onUnmounted(() => {
-  cleanupScene()
+  // 组件卸载时的清理工作
 })
 </script>
 
@@ -592,7 +499,63 @@ onUnmounted(() => {
 @import './VideoPage.css';
 
 /* 添加一些Vue组件特有的样式，覆盖CSS文件中的样式 */
-.video-page {
-  padding-bottom: 80px; /* 为底部导航栏留出空间 */
+
+/* 加载默认PLY文件按钮样式 - 右上角黑白风格 */
+.load-default-ply-section {
+  position: fixed;
+  top: calc(20px + env(safe-area-inset-top));
+  right: calc(20px + env(safe-area-inset-right));
+  z-index: 1000;
+}
+
+.load-default-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background-color: #ffffff;
+  color: #333333;
+  border: 2px solid #333333;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+}
+
+.load-default-btn:hover {
+  background-color: #333333;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.load-default-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.load-default-btn i {
+  font-size: 16px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .load-default-ply-section {
+    top: calc(15px + env(safe-area-inset-top));
+    right: calc(15px + env(safe-area-inset-right));
+  }
+  
+  .load-default-btn {
+    padding: 8px 14px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  
+  .load-default-btn i {
+    font-size: 14px;
+  }
 }
 </style>

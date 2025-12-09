@@ -48,10 +48,10 @@ const confirmReconstruct = () => {
   // 跳转到视频界面，并传递参数来自动触发对应视频的重建
   if (videos.value.length > 0) {
     // 获取当前视频的信息（可以是索引或唯一标识符）
-    const videoIndex = 0; // 假设我们总是重建第一个视频
+    const videoIndex = videos.value.length - 1; // 总是重建最后上传的视频
     // 跳转到视频界面并传递重建参数和视频索引
     router.push({
-      path: '/videos',
+      path: '/video',
       query: {
         autoReconstruct: 'true',
         videoIndex: videoIndex.toString()
@@ -59,7 +59,7 @@ const confirmReconstruct = () => {
     });
   } else {
     // 如果没有视频，仍然跳转到视频界面
-    router.push('/videos');
+    router.push('/video');
   }
 };
 
@@ -69,11 +69,6 @@ const cancelReconstruct = () => {
   // 用户可以继续录制新视频
   // 留在当前页面，不进行跳转
   console.log('取消三维重建，继续在当前页面录制');
-  
-  // 重置录制状态，以便用户可以录制新视频
-  if (currentStatus.value !== 'idle') {
-    currentStatus.value = 'idle';
-  }
 };
 
 
@@ -308,11 +303,8 @@ const handleFileUpload = (event) => {
     return;
   }
   
-  // 如果已经有视频，先清空
-  if (videos.value.length > 0) {
-    videos.value = [];
-    // 移除不存在的属性引用
-  }
+  // 保留现有视频，不再清空列表
+  // 如果已经有视频，不再清空，而是添加新视频
   
   // 创建文件读取器
   const reader = new FileReader();
@@ -447,7 +439,7 @@ let scale = 1;
       <div class="modal-overlay" @click="cancelReconstruct"></div>
       <div class="modal-content">
         <div class="modal-header">
-          <h3><i class="fas fa-check-circle"></i> 视频录制完成</h3>
+          <h3><i class="fas fa-check-circle"></i> 视频准备完成</h3>
           <button class="close-button" @click="cancelReconstruct">
             <i class="fas fa-times"></i>
           </button>
