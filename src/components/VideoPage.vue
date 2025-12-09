@@ -105,48 +105,7 @@
       </div>
     </div>
 
-    <!-- 3D重建弹窗 -->
-    <div v-if="show3DReconstruct" class="modal">
-      <div class="modal-overlay" @click="close3DReconstruct"></div>
-      <div class="modal-content reconstruct-modal">
-        <div class="modal-header">
-          <h3><i class="fas fa-cube"></i> 三维重建</h3>
-          <button class="close-button" @click="close3DReconstruct">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="modal-body">
-          <!-- 视频预览 -->
-          <div class="video-preview-section">
-            <h4>源视频</h4>
-            <video :src="currentReconstructVideo" class="preview-video" controls></video>
-          </div>
-          
-          <!-- 进度条 -->
-          <div v-if="isProcessing" class="progress-section">
-            <h4><i class="fas fa-sync-alt"></i> 三维重建进度</h4>
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: progress + '%' }"></div>
-            </div>
-            <div class="progress-text">{{ progress }}% - 正在处理中...</div>
-          </div>
-          
-          <!-- 3D模型显示区域 -->
-          <div v-if="show3DModel" class="model-section">
-            <h4><i class="fas fa-cube"></i> 三维模型预览</h4>
-            <div id="model-container" class="model-container"></div>
-            <p class="model-tip"><i class="fas fa-check-circle"></i> 模型已生成完成，可进行旋转、缩放等交互操作</p>
-          </div>
-          
-          <!-- 重建按钮 -->
-          <div v-if="!isProcessing && !show3DModel" class="reconstruct-actions">
-            <button class="reconstruct-button" @click="start3DReconstruction">
-              <i class="fas fa-cube"></i> 开始3D重建
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+c
   </div>
 </template>
 
@@ -161,11 +120,6 @@ const videos = ref([])
 const videoThumbnails = ref({})
 const showVideoPlayer = ref(false)
 const currentVideo = ref('')
-const show3DReconstruct = ref(false)
-const currentReconstructVideo = ref('')
-const isProcessing = ref(false)
-const progress = ref(0)
-const show3DModel = ref(false)
 
 // 重建状态管理
 const reconstructStatuses = ref({})
@@ -295,7 +249,8 @@ const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) =
     formData.append('video', videoBlob, 'reconstruction_video.mp4')
     
     // 2. 上传视频到后端
-    const uploadResponse = await fetch('/api/reconstruct', {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+    const uploadResponse = await fetch(`${apiBaseUrl}/api/reconstruct`, {
       method: 'POST',
       body: formData
     })
