@@ -1,5 +1,5 @@
 node_modules
 dist
-public
+src
 .DS_Store
 .npmrc
