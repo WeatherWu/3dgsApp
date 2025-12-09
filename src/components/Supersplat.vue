@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Application, Entity } from 'playcanvas'
-import { main as initViewer } from '../modules/supersplat-viewer/src/index'
-import '../modules/supersplat-viewer/public/index.css'
+import { main as initViewer } from '../modules/supersplat-viewer/index'
+import '../modules/supersplat-viewer/index.css'
 
 // 场景相关变量
 const isLoading = ref(true)

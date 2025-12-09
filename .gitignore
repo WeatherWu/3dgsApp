@@ -1,7 +1,14 @@
-
 node_modules
 android
 dist
 .vscode
-public
+
+.env
+.env.local
+.env.*.local
+
+package-lock.json  # npm
+yarn.lock         # yarn
+pnpm-lock.yaml    # pnpm
+
 
