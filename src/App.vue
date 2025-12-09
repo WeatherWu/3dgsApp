@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 // 定义导航项
@@ -16,10 +16,41 @@ const router = useRouter()
 // 计算当前激活的导航项
 const activeNav = computed(() => route.path)
 
+// 检查是否可以跳转到3D模型页面
+const canNavigateToSupersplat = computed(() => {
+  const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
+  const currentPlyUrl = localStorage.getItem('currentPlyUrl')
+  
+  // 只有当选中了视频并且有对应的PLY文件时，才能跳转到3D模型页面
+  return selectedVideoIndex !== null && currentPlyUrl !== '' && currentPlyUrl !== null
+})
+
 // 导航到指定路径
 const navigateTo = (path) => {
+  // 如果是跳转到3D模型页面，检查是否可以跳转
+  if (path === '/supersplat' && !canNavigateToSupersplat.value) {
+    return
+  }
+  
   router.push(path)
 }
+
+// 组件挂载时检查localStorage中的数据
+onMounted(() => {
+  const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
+  if (selectedVideoIndex !== null) {
+    const plyUrl = localStorage.getItem(`plyUrl_${selectedVideoIndex}`)
+    localStorage.setItem('currentPlyUrl', plyUrl || '')
+  }
+})
+
+// 监听路由变化
+watch(() => route.path, (newPath) => {
+  // 如果导航到3D模型页面，但没有选中视频或没有PLY文件，自动跳回视频页面
+  if (newPath === '/supersplat' && !canNavigateToSupersplat.value) {
+    router.push('/video')
+  }
+})
 </script>
 
 <template>
@@ -35,7 +66,10 @@ const navigateTo = (path) => {
         v-for="item in navItems" 
         :key="item.path"
         class="nav-item"
-        :class="{ active: activeNav === item.path }"
+        :class="{ 
+          active: activeNav === item.path, 
+          disabled: item.path === '/supersplat' && !canNavigateToSupersplat 
+        }"
         @click="navigateTo(item.path)"
       >
         <i :class="['fas', item.icon]"></i>
@@ -137,6 +171,17 @@ const navigateTo = (path) => {
 
 .nav-item:hover .nav-label {
   transform: translateY(-2px);
+}
+
+/* 禁用状态样式 */
+.nav-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav-item.disabled:hover {
+  background-color: transparent;
+  color: #666;
 }
 
 .nav-item.active .nav-label {

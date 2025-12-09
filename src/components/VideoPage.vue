@@ -13,6 +13,8 @@
           v-for="(video, index) in videos" 
           :key="index" 
           class="video-item"
+          :class="{ 'selected': selectedVideoIndex === index }"
+          @click="selectVideo(index)"
         >
           <div class="video-thumbnail-container">
             <video 
@@ -168,6 +170,19 @@ const show3DModel = ref(false)
 // 重建状态管理
 const reconstructStatuses = ref({})
 
+// 选中的视频索引
+const selectedVideoIndex = ref(null)
+
+// 选择视频
+const selectVideo = (index) => {
+  selectedVideoIndex.value = index
+  localStorage.setItem('selectedVideoIndex', index)
+  
+  // 检查该视频是否有对应的PLY文件
+  const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+  localStorage.setItem('currentPlyUrl', plyUrl || '')
+}
+
 // Three.js相关变量
 let scene, camera, renderer
 let pointCloud
@@ -271,7 +286,66 @@ const close3DReconstruct = () => {
   cleanupScene()
 }
 
-// 开始3D重建
+// 通用的3D重建核心函数
+const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) => {
+  try {
+    // 1. 从视频URL获取视频文件
+    const videoBlob = await fetch(videoUrl).then(res => res.blob())
+    const formData = new FormData()
+    formData.append('video', videoBlob, 'reconstruction_video.mp4')
+    
+    // 2. 上传视频到后端
+    const uploadResponse = await fetch('/api/reconstruct', {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (!uploadResponse.ok) {
+      throw new Error('视频上传失败')
+    }
+    
+    // 3. 获取任务ID
+    const taskData = await uploadResponse.json()
+    const taskId = taskData.taskId
+    
+    // 4. 轮询检查任务状态
+    let taskStatus = 'processing'
+    while (taskStatus === 'processing') {
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      const statusResponse = await fetch(`/api/task/${taskId}`)
+      const statusData = await statusResponse.json()
+      
+      taskStatus = statusData.status
+      const progress = statusData.progress || 0
+      
+      // 调用进度更新回调
+      if (onProgressUpdate) {
+        onProgressUpdate(progress)
+      }
+      
+      if (taskStatus === 'error') {
+        throw new Error('3D重建失败: ' + (statusData.message || '未知错误'))
+      }
+    }
+    
+    // 5. 任务完成，获取PLY文件URL
+    const plyUrl = taskData.resultUrl
+    
+    // 调用完成回调
+    if (onComplete) {
+      onComplete(plyUrl)
+    }
+    
+    return plyUrl
+    
+  } catch (error) {
+    console.error(`重建失败:`, error)
+    throw error
+  }
+}
+
+// 开始3D重建（弹窗内使用）
 const start3DReconstruction = async () => {
   if (!currentReconstructVideo.value) return
   
@@ -280,22 +354,29 @@ const start3DReconstruction = async () => {
     progress.value = 0
     show3DModel.value = false
     
-    // 模拟重建进度
-    for (let i = 0; i < 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 200))
-      progress.value = i
-    }
-    
-    progress.value = 100
-    
-    // 延迟显示3D模型
-    setTimeout(() => {
-      show3DModel.value = true
-      isProcessing.value = false
-      init3DScene()
-    }, 500)
+    await perform3DReconstruction(
+      currentReconstructVideo.value,
+      (newProgress) => {
+        progress.value = newProgress
+      },
+      (plyUrl) => {
+          progress.value = 100
+          localStorage.setItem('latestPlyUrl', plyUrl)
+          
+          // 如果当前正在重建的视频是选中的视频，更新currentPlyUrl
+          if (selectedVideoIndex.value !== null && videos.value[selectedVideoIndex.value] === currentReconstructVideo.value) {
+            localStorage.setItem('currentPlyUrl', plyUrl)
+          }
+          
+          setTimeout(() => {
+            show3DModel.value = true
+            isProcessing.value = false
+          }, 500)
+        }
+    )
   } catch (err) {
     console.error('3D重建失败:', err)
+    alert('3D重建失败: ' + err.message)
     isProcessing.value = false
   }
 }
@@ -478,26 +559,33 @@ const getReconstructStatusColor = (status) => {
   return colorMap[status] || '#666'
 }
 
-// 开始重建
+// 开始重建（列表中直接使用）
 const startReconstruction = async (videoIndex) => {
   if (!videos.value[videoIndex]) return
   
   try {
-    // 更新状态为重建中
+    const videoUrl = videos.value[videoIndex]
     updateReconstructStatus(videoIndex, 'processing', 0)
     
-    // 模拟重建进度
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      updateReconstructStatus(videoIndex, 'processing', i)
-    }
-    
-    // 重建完成
-    updateReconstructStatus(videoIndex, 'completed', 100)
-    
+    await perform3DReconstruction(
+      videoUrl,
+      (newProgress) => {
+        updateReconstructStatus(videoIndex, 'processing', newProgress)
+      },
+      (plyUrl) => {
+        updateReconstructStatus(videoIndex, 'completed', 100)
+        localStorage.setItem(`plyUrl_${videoIndex}`, plyUrl)
+        
+        // 如果该视频是当前选中的视频，更新currentPlyUrl
+        if (selectedVideoIndex.value === videoIndex) {
+          localStorage.setItem('currentPlyUrl', plyUrl)
+        }
+      }
+    )
   } catch (error) {
     console.error(`重建失败:`, error)
     updateReconstructStatus(videoIndex, 'error', 0)
+    alert(`视频 ${videoIndex + 1} 重建失败: ${error.message}`)
   }
 }
 

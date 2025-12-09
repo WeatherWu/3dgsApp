@@ -1,16 +1,8 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Application, Entity } from 'playcanvas'
 import { main as initViewer } from '../modules/supersplat-viewer/src/index'
 import '../modules/supersplat-viewer/public/index.css'
-
-// 定义props，允许外部传入PLY文件URL
-const props = defineProps({
-  modelUrl: {
-    type: String,
-    default: '/supersplat-viewer/scene.compressed.ply'
-  }
-})
 
 // 场景相关变量
 const isLoading = ref(true)
@@ -18,20 +10,28 @@ const error = ref(null)
 const detailedError = ref('')
 const containerRef = ref(null)
 const canvasRef = ref(null) // 引用Vue管理的canvas元素
-const splatUrl = ref(props.modelUrl)
+const splatUrl = ref(null)
+
+// 从localStorage获取当前PLY文件URL
+const loadCurrentPlyUrl = () => {
+  const plyUrl = localStorage.getItem('currentPlyUrl')
+  if (plyUrl && plyUrl !== '') {
+    splatUrl.value = plyUrl
+  } else {
+    // 默认路径（如果没有选中的视频或PLY文件）
+    splatUrl.value = '/supersplat-viewer/scene.compressed.ply'
+  }
+}
+
+// 初始化时加载PLY URL
+loadCurrentPlyUrl()
 const isModelLoaded = ref(false)
 let appInstance = null
 let viewer = null
 let camera = null
 let handleResize = null // 保存resize事件处理函数，以便在组件卸载时移除
 
-// 监听modelUrl变化，重新加载模型
-watch(() => props.modelUrl, (newUrl) => {
-  if (newUrl && newUrl !== splatUrl.value) {
-    splatUrl.value = newUrl
-    loadModel(newUrl)
-  }
-})
+
 
 // 加载模型
 const loadModel = (url) => {
