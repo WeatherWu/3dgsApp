@@ -114,6 +114,7 @@
 </template>
 
 <script setup>
+import { Filesystem, Directory } from '@capacitor/filesystem'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as THREE from 'three'
@@ -310,8 +311,34 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) => {
   try {
     // 1. 从视频URL获取视频文件
-    const videoResponse = await fetch(videoUrl)
-    const videoBlob = await videoResponse.blob()
+    console.log('处理视频URL:', videoUrl)
+    let videoBlob;
+    
+    if (videoUrl.startsWith('data:')) {
+      // 处理Data URL（上传的视频）
+      console.log('处理Data URL:', videoUrl)
+      const base64Data = videoUrl.split(',')[1]
+      const byteCharacters = atob(base64Data)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      videoBlob = new Blob([byteArray], { type: 'video/mp4' })
+      console.log('Data URL读取成功，Blob大小:', videoBlob.size)
+    } else if (videoUrl.startsWith('blob:')) {
+      // 处理Blob URL
+      console.log('处理Blob URL:', videoUrl)
+      const response = await fetch(videoUrl)
+      videoBlob = await response.blob()
+      console.log('Blob URL读取成功，Blob大小:', videoBlob.size)
+    } else {
+      // 处理本地文件路径（录制的视频）
+      console.log('处理本地文件路径:', videoUrl)
+      const response = await fetch(videoUrl)
+      videoBlob = await response.blob()
+      console.log('本地文件读取成功，Blob大小:', videoBlob.size)
+    }
     
     // 2. 创建FormData
     const formData = new FormData()
@@ -427,14 +454,23 @@ const loadDefaultPly = () => {
 onMounted(() => {
   loadVideos()
   
-  // 只有当不是默认模式时，才重置选择状态到默认值
+  // 加载之前保存的选择状态
   const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
-  if (currentSelectedIndex !== 'default') {
-    selectedVideoIndex.value = null
-    localStorage.removeItem('selectedVideoIndex')
-    localStorage.removeItem('currentPlyUrl')
-  } else {
+  if (currentSelectedIndex === 'default') {
     selectedVideoIndex.value = 'default'
+  } else if (currentSelectedIndex !== null) {
+    // 确保索引有效且在视频数组范围内
+    const index = parseInt(currentSelectedIndex)
+    if (!isNaN(index) && index >= 0 && index < videos.value.length) {
+      selectedVideoIndex.value = index
+    } else {
+      // 索引无效时重置
+      selectedVideoIndex.value = null
+      localStorage.removeItem('selectedVideoIndex')
+      localStorage.removeItem('currentPlyUrl')
+    }
+  } else {
+    selectedVideoIndex.value = null
   }
 })
 

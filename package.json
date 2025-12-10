@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@capacitor-community/media": "^8.0.1",
+    "@capacitor/filesystem": "^7.1.5",
     "@fortawesome/fontawesome-free": "^7.1.0",
     "@ionic-native/core": "^5.36.0",
     "@ionic-native/media-capture": "^5.36.0",
