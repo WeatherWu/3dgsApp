@@ -30,9 +30,9 @@ router.beforeEach((to, from, next) => {
     const currentPlyUrl = localStorage.getItem('currentPlyUrl')
     
     // 只有当满足以下条件之一时才允许访问：
-    // 1. selectedVideoIndex为具体索引值且有对应PLY文件
+    // 1. selectedVideoIndex为具体索引值且有对应PLY文件（不为空）
     // 2. 通过"加载默认PLY"按钮设置了正确的默认路径
-    const canAccess = (selectedVideoIndex !== null && selectedVideoIndex !== 'default' && currentPlyUrl) || 
+    const canAccess = (selectedVideoIndex !== null && selectedVideoIndex !== 'default' && currentPlyUrl && currentPlyUrl !== '') || 
                      (selectedVideoIndex === 'default' && currentPlyUrl === '/supersplat-viewer/scene.compressed.ply')
     
     if (canAccess) {

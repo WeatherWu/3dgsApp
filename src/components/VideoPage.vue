@@ -434,17 +434,41 @@ const startReconstruction = async (videoIndex) => {
       (newProgress) => {
         updateReconstructStatus(videoIndex, 'processing', newProgress)
       },
-      (plyUrl) => {
+      async (plyUrl) => {
         updateReconstructStatus(videoIndex, 'completed', 100)
-        localStorage.setItem(`plyUrl_${videoIndex}`, plyUrl)
         
-        // 更新currentPlyUrl为当前重建完成的视频对应的PLY文件URL
-        // 这样用户可以直接进入3D模型页面查看最新重建的模型
-        localStorage.setItem('currentPlyUrl', plyUrl)
-        
-        // 同时更新选中的视频索引
-        localStorage.setItem('selectedVideoIndex', videoIndex)
-        selectedVideoIndex.value = videoIndex
+        // 下载PLY文件到本地
+        try {
+          const response = await fetch(plyUrl)
+          const blob = await response.blob()
+          const arrayBuffer = await blob.arrayBuffer()
+          const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+          
+          // 保存到本地文件系统
+          const fileName = `ply_${videoIndex}_${Date.now()}.ply`
+          await Filesystem.writeFile({
+            path: fileName,
+            data: base64Data,
+            directory: Directory.Data,
+            recursive: true
+          })
+          
+          // 保存本地文件路径到localStorage
+          localStorage.setItem(`plyUrl_${videoIndex}`, fileName)
+          localStorage.setItem('currentPlyUrl', fileName)
+          
+          // 同时更新选中的视频索引
+          localStorage.setItem('selectedVideoIndex', videoIndex)
+          selectedVideoIndex.value = videoIndex
+          
+          console.log('PLY文件已下载并保存到本地:', fileName)
+        } catch (downloadError) {
+          console.error('下载PLY文件失败:', downloadError)
+          // 只使用本地文件，下载失败时不保存远程URL
+          alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
+          // 重置重建状态
+          resetReconstructStatus(videoIndex)
+        }
       }
     )
   } catch (error) {
@@ -502,17 +526,15 @@ onMounted(() => {
       selectedVideoIndex.value = index
       // 更新currentPlyUrl为选中视频的PLY文件URL
       let plyUrl = localStorage.getItem(`plyUrl_${index}`)
-      // 确保PLY文件URL是完整的绝对URL
+      // 确保PLY文件URL是完整的绝对URL，只处理根相对路径
       if (plyUrl && plyUrl !== '' && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
         if (plyUrl.startsWith('/')) {
           // 如果是根相对路径，直接拼接
           plyUrl = apiBaseUrl + plyUrl
-        } else {
-          // 如果是相对路径，添加斜杠后拼接
-          plyUrl = apiBaseUrl + '/' + plyUrl
+          // 更新localStorage中的URL
+          localStorage.setItem(`plyUrl_${index}`, plyUrl)
         }
-        // 更新localStorage中的URL
-        localStorage.setItem(`plyUrl_${index}`, plyUrl)
+        // 本地文件路径（不以/开头）不做处理，保持原样
       }
       localStorage.setItem('currentPlyUrl', plyUrl || '')
     } else {

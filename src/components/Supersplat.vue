@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Application, Entity } from 'playcanvas'
 import { main as initViewer } from '../modules/supersplat-viewer/index'
 import '../modules/supersplat-viewer/index.css'
+import { Filesystem, Directory } from '@capacitor/filesystem'
 
 // 场景相关变量
 const isLoading = ref(true)
@@ -15,12 +16,28 @@ const splatUrl = ref(null)
 // 从localStorage获取当前PLY文件URL
 const loadCurrentPlyUrl = () => {
   const plyUrl = localStorage.getItem('currentPlyUrl')
+  const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
+  console.log('loadCurrentPlyUrl - 从localStorage获取值:')
+  console.log('  selectedVideoIndex:', selectedVideoIndex)
+  console.log('  currentPlyUrl:', plyUrl)
+  
   if (plyUrl && plyUrl !== '') {
     splatUrl.value = plyUrl
+    console.log('  设置splatUrl.value为:', splatUrl.value)
   } else {
     // 如果没有选中的视频或PLY文件，不设置默认路径
     // 此时isLoading会保持为true，直到有有效的PLY文件被选择
     splatUrl.value = null
+    console.log('  设置splatUrl.value为null（没有有效的PLY文件URL）')
+  }
+}
+
+// 释放资源
+const releaseResources = () => {
+  // 释放之前创建的本地URL对象
+  if (appInstance?.contentUrl && appInstance.contentUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(appInstance.contentUrl)
+    console.log('释放本地URL对象:', appInstance.contentUrl)
   }
 }
 
@@ -40,6 +57,9 @@ const loadModel = (url) => {
     if (!viewer) {
       throw new Error('查看器未初始化')
     }
+    
+    // 释放之前的资源
+    releaseResources()
     
     // 重新初始化查看器并加载新模型
     if (appInstance && typeof appInstance.destroy === 'function') {
@@ -123,11 +143,44 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
     // 加载设置
     const settingsResponse = await fetch('/supersplat-viewer/settings.json')
     const settingsJson = await settingsResponse.json()
+    
+    // 处理模型URL，如果是本地文件路径则从本地读取
+    let contentUrl = modelUrl
+    let contents = null
+    
+    if (modelUrl && !modelUrl.startsWith('http://') && !modelUrl.startsWith('https://') && !modelUrl.startsWith('/')) {
+      // 本地文件路径，从本地文件系统读取
+      try {
+        console.log('尝试从本地文件系统读取PLY文件:', modelUrl)
+        const file = await Filesystem.readFile({
+          path: modelUrl,
+          directory: Directory.Data
+        })
+        
+        // 将base64数据转换为Blob
+        const binaryString = atob(file.data)
+        const binaryArray = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          binaryArray[i] = binaryString.charCodeAt(i)
+        }
+        const blob = new Blob([binaryArray], { type: 'application/octet-stream' })
+        
+        // 创建本地URL用于加载
+        contentUrl = URL.createObjectURL(blob)
+        contents = blob
+        
+        console.log('成功从本地加载PLY文件:', modelUrl)
+      } catch (localReadError) {
+        console.error('从本地文件系统读取PLY文件失败:', localReadError)
+        // 如果是本地文件路径，读取失败时不回退到HTTP请求
+        throw new Error('无法从本地文件系统读取PLY文件: ' + localReadError.message)
+      }
+    }
 
     // 配置参数，设置noui: true禁用UI（避免DOM元素不存在错误）
     const config = {
-      contentUrl: modelUrl,
-      contents: null,
+      contentUrl: contentUrl,
+      contents: contents,
       unified: false,
       aa: false,
       poster: false,
@@ -135,6 +188,9 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
       noanim: false,
       ministats: false
     }
+    
+    // 将contentUrl存储在appInstance上以便后续释放
+    appInstance.contentUrl = contentUrl
 
     // 调试：在调用initViewer之前检查appInstance变量
     console.log('调用initViewer之前的appInstance:', appInstance, typeof appInstance);
@@ -241,6 +297,9 @@ onMounted(async () => {
   // 等待DOM更新完成
   await nextTick()
   
+  // 重新加载当前PLY文件URL，确保获取到最新的值
+  loadCurrentPlyUrl()
+  
   // 只有当有有效的PLY文件URL时，才初始化PlayCanvas应用
   if (splatUrl.value) {
     await initPlayCanvasApp()
@@ -258,6 +317,9 @@ onUnmounted(() => {
     window.removeEventListener('resize', handleResize)
     handleResize = null
   }
+  
+  // 释放资源
+  releaseResources()
   
   // 销毁PlayCanvas应用实例
   if (appInstance) {
