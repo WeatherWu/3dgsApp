@@ -140,6 +140,13 @@ const selectVideo = (index) => {
   // 检查该视频是否有对应的PLY文件
   const plyUrl = localStorage.getItem(`plyUrl_${index}`)
   localStorage.setItem('currentPlyUrl', plyUrl || '')
+  
+  // 调试信息
+  console.log('selectVideo - 更新选择状态:')
+  console.log('  selectedVideoIndex.value:', selectedVideoIndex.value)
+  console.log('  localStorage.selectedVideoIndex:', localStorage.getItem('selectedVideoIndex'))
+  console.log('  plyUrl:', plyUrl)
+  console.log('  localStorage.currentPlyUrl:', localStorage.getItem('currentPlyUrl'))
 }
 
 
@@ -195,6 +202,20 @@ const loadVideos = () => {
             startReconstruction(videoIndex)
             // 清除查询参数，避免重复触发
             router.replace({ query: {} })
+          }
+        }
+        
+        // 更新选中的视频索引和对应的PLY文件URL
+        const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
+        if (currentSelectedIndex === 'default') {
+          selectedVideoIndex.value = 'default'
+          localStorage.setItem('currentPlyUrl', '/supersplat-viewer/scene.compressed.ply')
+        } else if (currentSelectedIndex !== null) {
+          const index = parseInt(currentSelectedIndex)
+          if (!isNaN(index) && index >= 0 && index < videos.value.length) {
+            selectedVideoIndex.value = index
+            const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+            localStorage.setItem('currentPlyUrl', plyUrl || '')
           }
         }
       }, 0)
@@ -373,8 +394,19 @@ const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) =
         setTimeout(checkProgress, 1000)
       } else if (taskStatus === 'completed') {
         // 任务完成，获取PLY文件URL
-        const plyUrl = statusData.ply_url
-        onComplete(plyUrl)
+    let plyUrl = statusData.ply_url
+    // 确保PLY文件URL是完整的绝对URL
+    if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
+      // 如果是相对路径，与apiBaseUrl结合
+      if (plyUrl.startsWith('/')) {
+        // 如果是根相对路径，直接拼接
+        plyUrl = apiBaseUrl + plyUrl
+      } else {
+        // 如果是相对路径，添加斜杠后拼接
+        plyUrl = apiBaseUrl + '/' + plyUrl
+      }
+    }
+    onComplete(plyUrl)
       } else {
         throw new Error('3D重建失败')
       }
@@ -406,10 +438,13 @@ const startReconstruction = async (videoIndex) => {
         updateReconstructStatus(videoIndex, 'completed', 100)
         localStorage.setItem(`plyUrl_${videoIndex}`, plyUrl)
         
-        // 如果该视频是当前选中的视频，更新currentPlyUrl
-        if (selectedVideoIndex.value === videoIndex) {
-          localStorage.setItem('currentPlyUrl', plyUrl)
-        }
+        // 更新currentPlyUrl为当前重建完成的视频对应的PLY文件URL
+        // 这样用户可以直接进入3D模型页面查看最新重建的模型
+        localStorage.setItem('currentPlyUrl', plyUrl)
+        
+        // 同时更新选中的视频索引
+        localStorage.setItem('selectedVideoIndex', videoIndex)
+        selectedVideoIndex.value = videoIndex
       }
     )
   } catch (error) {
@@ -458,11 +493,28 @@ onMounted(() => {
   const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
   if (currentSelectedIndex === 'default') {
     selectedVideoIndex.value = 'default'
+    // 确保currentPlyUrl也设置为默认值
+    localStorage.setItem('currentPlyUrl', '/supersplat-viewer/scene.compressed.ply')
   } else if (currentSelectedIndex !== null) {
     // 确保索引有效且在视频数组范围内
     const index = parseInt(currentSelectedIndex)
     if (!isNaN(index) && index >= 0 && index < videos.value.length) {
       selectedVideoIndex.value = index
+      // 更新currentPlyUrl为选中视频的PLY文件URL
+      let plyUrl = localStorage.getItem(`plyUrl_${index}`)
+      // 确保PLY文件URL是完整的绝对URL
+      if (plyUrl && plyUrl !== '' && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
+        if (plyUrl.startsWith('/')) {
+          // 如果是根相对路径，直接拼接
+          plyUrl = apiBaseUrl + plyUrl
+        } else {
+          // 如果是相对路径，添加斜杠后拼接
+          plyUrl = apiBaseUrl + '/' + plyUrl
+        }
+        // 更新localStorage中的URL
+        localStorage.setItem(`plyUrl_${index}`, plyUrl)
+      }
+      localStorage.setItem('currentPlyUrl', plyUrl || '')
     } else {
       // 索引无效时重置
       selectedVideoIndex.value = null
@@ -477,20 +529,23 @@ onMounted(() => {
 // 删除视频
 const deleteVideo = (index) => {
   if (confirm('确定要删除这个视频吗？')) {
-    // 1. 删除被删除视频的PLY文件URL
+    // 1. 检查被删除的视频是否是当前选中的视频
+    const isCurrentSelected = selectedVideoIndex.value === index;
+    
+    // 2. 删除被删除视频的PLY文件URL
     localStorage.removeItem(`plyUrl_${index}`)
     
-    // 2. 获取当前的重建状态
+    // 3. 获取当前的重建状态
     const savedStatuses = localStorage.getItem('reconstructStatuses')
     let statusesObj = {};
     if (savedStatuses) {
       statusesObj = JSON.parse(savedStatuses);
     }
     
-    // 3. 删除被删除视频的重建状态
+    // 4. 删除被删除视频的重建状态
     delete statusesObj[index];
     
-    // 4. 更新后续视频的索引和对应的PLY文件URL
+    // 5. 更新后续视频的索引和对应的PLY文件URL
     const totalVideos = videos.value.length;
     for (let i = index + 1; i < totalVideos; i++) {
       // 更新PLY文件URL的键
@@ -507,16 +562,44 @@ const deleteVideo = (index) => {
       }
     }
     
-    // 5. 保存更新后的重建状态
+    // 6. 保存更新后的重建状态
     localStorage.setItem('reconstructStatuses', JSON.stringify(statusesObj));
     
-    // 6. 删除视频
+    // 7. 删除视频
     videos.value.splice(index, 1);
     
-    // 7. 更新本地存储中的视频列表
+    // 8. 更新本地存储中的视频列表
     localStorage.setItem('photoReconstructionVideos', JSON.stringify(videos.value));
     
-    // 8. 重新生成缩略图和更新重建状态
+    // 9. 如果被删除的视频是当前选中的视频，需要更新selectedVideoIndex和currentPlyUrl
+    if (isCurrentSelected) {
+      // 如果还有其他视频，选择第一个视频
+      if (videos.value.length > 0) {
+        // 选择第一个视频
+        selectedVideoIndex.value = 0;
+        localStorage.setItem('selectedVideoIndex', 0);
+        
+        // 更新currentPlyUrl为第一个视频对应的PLY文件URL
+        const plyUrl = localStorage.getItem(`plyUrl_0`);
+        localStorage.setItem('currentPlyUrl', plyUrl || '');
+      } else {
+        // 如果没有其他视频，重置selectedVideoIndex和currentPlyUrl
+        selectedVideoIndex.value = null;
+        localStorage.removeItem('selectedVideoIndex');
+        localStorage.removeItem('currentPlyUrl');
+      }
+    } else if (selectedVideoIndex.value !== null && selectedVideoIndex.value !== 'default' && selectedVideoIndex.value > index) {
+      // 如果当前选中的视频索引大于被删除的视频索引，需要更新selectedVideoIndex和currentPlyUrl
+      const newSelectedIndex = selectedVideoIndex.value - 1;
+      selectedVideoIndex.value = newSelectedIndex;
+      localStorage.setItem('selectedVideoIndex', newSelectedIndex);
+      
+      // 更新currentPlyUrl为新选中视频对应的PLY文件URL
+      const plyUrl = localStorage.getItem(`plyUrl_${newSelectedIndex}`);
+      localStorage.setItem('currentPlyUrl', plyUrl || '');
+    }
+    
+    // 10. 重新生成缩略图和更新重建状态
     loadVideos();
   }
 }
