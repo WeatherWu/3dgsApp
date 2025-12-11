@@ -394,19 +394,19 @@ const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) =
         setTimeout(checkProgress, 1000)
       } else if (taskStatus === 'completed') {
         // 任务完成，获取PLY文件URL
-    let plyUrl = statusData.ply_url
-    // 确保PLY文件URL是完整的绝对URL
-    if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
-      // 如果是相对路径，与apiBaseUrl结合
-      if (plyUrl.startsWith('/')) {
-        // 如果是根相对路径，直接拼接
-        plyUrl = apiBaseUrl + plyUrl
-      } else {
-        // 如果是相对路径，添加斜杠后拼接
-        plyUrl = apiBaseUrl + '/' + plyUrl
-      }
-    }
-    onComplete(plyUrl)
+        let plyUrl = statusData.ply_url
+        // 确保PLY文件URL是完整的绝对URL
+        if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
+          // 如果是相对路径，与apiBaseUrl结合
+          if (plyUrl.startsWith('/')) {
+            // 如果是根相对路径，直接拼接
+            plyUrl = apiBaseUrl + plyUrl
+          } else {
+            // 如果是相对路径，添加斜杠后拼接
+            plyUrl = apiBaseUrl + '/' + plyUrl
+          }
+        }
+        onComplete(plyUrl)
       } else {
         throw new Error('3D重建失败')
       }
