@@ -25,10 +25,9 @@ const loadCurrentPlyUrl = () => {
     splatUrl.value = plyUrl
     console.log('  设置splatUrl.value为:', splatUrl.value)
   } else {
-    // 如果没有选中的视频或PLY文件，不设置默认路径
-    // 此时isLoading会保持为true，直到有有效的PLY文件被选择
-    splatUrl.value = null
-    console.log('  设置splatUrl.value为null（没有有效的PLY文件URL）')
+    // 如果没有选中的视频或PLY文件，使用默认的PLY模型
+    splatUrl.value = '/supersplat-viewer/scene.compressed.ply'
+    console.log('  设置splatUrl.value为默认模型:', splatUrl.value)
   }
 }
 
@@ -48,6 +47,7 @@ let appInstance = null
 let viewer = null
 let camera = null
 let handleResize = null // 保存resize事件处理函数，以便在组件卸载时移除
+let animationFrameId = null // 保存渲染循环的ID，以便在重新初始化时停止
 
 
 
@@ -56,6 +56,13 @@ const loadModel = (url) => {
   try {
     if (!viewer) {
       throw new Error('查看器未初始化')
+    }
+    
+    // 停止之前的渲染循环
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId)
+      animationFrameId = null
+      console.log('已停止之前的渲染循环')
     }
     
     // 释放之前的资源
@@ -148,8 +155,22 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
     let contentUrl = modelUrl
     let contents = null
     
-    if (modelUrl && !modelUrl.startsWith('http://') && !modelUrl.startsWith('https://') && !modelUrl.startsWith('/')) {
-      // 本地文件路径，从本地文件系统读取
+    // 调试信息：详细记录modelUrl的处理过程
+    console.log('处理模型URL - 开始:')
+    console.log('  原始modelUrl:', modelUrl)
+    console.log('  modelUrl类型:', typeof modelUrl)
+    console.log('  modelUrl是File对象:', modelUrl instanceof File)
+    console.log('  modelUrl.startsWith("/"):', typeof modelUrl === 'string' && modelUrl.startsWith('/'))
+    
+    if (modelUrl instanceof File) {
+      // 如果是File对象，直接使用
+      console.log('使用File对象:', modelUrl.name)
+      // 创建Blob URL
+      contentUrl = URL.createObjectURL(modelUrl)
+      contents = modelUrl
+      console.log('成功创建File对象的Blob URL:', contentUrl)
+    } else if (modelUrl && typeof modelUrl === 'string' && !modelUrl.startsWith('http://') && !modelUrl.startsWith('https://') && !modelUrl.startsWith('/')) {
+      // 本地文件路径字符串，从本地文件系统读取
       try {
         console.log('尝试从本地文件系统读取PLY文件:', modelUrl)
         const file = await Filesystem.readFile({
@@ -178,9 +199,11 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
     }
 
     // 配置参数，设置noui: true禁用UI（避免DOM元素不存在错误）
+    // 注意：当使用默认路径时，需要确保contentUrl格式正确
+    // 修复：确保contents参数是File对象或null
     const config = {
       contentUrl: contentUrl,
-      contents: contents,
+      contents: contents instanceof File ? contents : null,
       unified: false,
       aa: false,
       poster: false,
@@ -188,6 +211,12 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
       noanim: false,
       ministats: false
     }
+    
+    // 调试信息：记录最终的contentUrl和config
+    console.log('处理模型URL - 结束:')
+    console.log('  最终contentUrl:', contentUrl)
+    console.log('  contents:', contents)
+    console.log('  config:', config)
     
     // 将contentUrl存储在appInstance上以便后续释放
     appInstance.contentUrl = contentUrl
@@ -213,6 +242,12 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
       let lastTime = performance.now();
       
       const renderLoop = (time) => {
+        // 检查appInstance是否仍然存在
+        if (!appInstance) {
+          console.log('appInstance不存在，停止渲染循环');
+          return;
+        }
+        
         const deltaTime = (time - lastTime) / 1000;
         lastTime = time;
         
@@ -223,10 +258,12 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
           console.warn('渲染循环出错:', err);
         }
         
-        requestAnimationFrame(renderLoop);
+        // 保存animationFrameId，以便在需要时可以取消
+        animationFrameId = requestAnimationFrame(renderLoop);
       };
       
-      requestAnimationFrame(renderLoop);
+      // 保存animationFrameId，以便在需要时可以取消
+      animationFrameId = requestAnimationFrame(renderLoop);
       console.log('手动渲染循环已启动');
     }
 
@@ -312,6 +349,13 @@ onMounted(async () => {
 
 // 组件卸载时清理
 onUnmounted(() => {
+  // 停止渲染循环
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+    console.log('组件卸载时已停止渲染循环')
+  }
+  
   // 移除窗口大小变化事件监听器
   if (handleResize) {
     window.removeEventListener('resize', handleResize)

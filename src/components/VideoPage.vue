@@ -25,12 +25,12 @@
         >
           <div class="video-thumbnail-container">
             <video 
-              :src="video" 
+              :src="typeof video === 'object' ? (video.blobUrl || video.filePath) : video" 
               class="video-thumbnail"
-              @loadeddata="generateThumbnail(video, index)"
+              @loadeddata="generateThumbnail(typeof video === 'object' ? (video.blobUrl || video.filePath) : video, index)"
               preload="metadata"
             ></video>
-            <div v-if="videoThumbnails[index]" class="video-cover" @click.stop="playVideo(video)">
+            <div v-if="videoThumbnails[index]" class="video-cover" @click.stop="playVideo(typeof video === 'object' ? (video.blobUrl || video.filePath) : video)">
               <img :src="videoThumbnails[index]" alt="视频封面" class="cover-image" />
               <div class="play-overlay">
                 <i class="fas fa-play"></i>
@@ -71,7 +71,7 @@
             </div>
             
             <div class="video-actions">
-              <button class="action-btn play-btn" @click.stop="playVideo(video)">
+              <button class="action-btn play-btn" @click.stop="playVideo(typeof video === 'object' ? video.blobUrl : video)">
                 <i class="fas fa-play"></i>
               </button>
               <button class="action-btn reconstruct-btn" @click.stop="startReconstruction(index)" :disabled="reconstructStatuses[index]?.status === 'processing'">
@@ -152,73 +152,213 @@ const selectVideo = (index) => {
 
 
 // 从本地存储加载视频
-const loadVideos = () => {
+const loadVideos = async () => {
   try {
     const savedVideos = localStorage.getItem('photoReconstructionVideos')
     if (savedVideos) {
       const parsedVideos = JSON.parse(savedVideos)
       // 确保是有效的数组并且不为空
       if (Array.isArray(parsedVideos)) {
-        videos.value = parsedVideos.filter(video => video && typeof video === 'string')
+        videos.value = []
+        
+        // 批量处理视频URL，确保URL的有效性
+        const processVideoUrl = async (videoItem, originalIndex) => {
+          try {
+            // 如果是视频元数据对象（新的存储格式）
+            if (typeof videoItem === 'object' && videoItem !== null) {
+              // 如果包含base64数据，重新创建Blob URL
+              if (videoItem.base64Data) {
+                try {
+                  const parts = videoItem.base64Data.split(';base64,')
+                  const contentType = parts[0].split(':')[1]
+                  const raw = window.atob(parts[1])
+                  const rawLength = raw.length
+                  const uInt8Array = new Uint8Array(rawLength)
+                  
+                  for (let i = 0; i < rawLength; ++i) {
+                    uInt8Array[i] = raw.charCodeAt(i)
+                  }
+                  
+                  const videoBlob = new Blob([uInt8Array], { type: contentType })
+                  const newBlobUrl = URL.createObjectURL(videoBlob)
+                  console.log('已从Base64数据重新创建Blob URL:', newBlobUrl)
+                  // 返回更新后的对象，包含新的Blob URL
+                  return {
+                    ...videoItem,
+                    blobUrl: newBlobUrl
+                  }
+                } catch (base64Error) {
+                  console.error(`处理Base64数据失败 (索引${originalIndex}):`, base64Error)
+                  return null
+                }
+              } else if (videoItem.filePath) {
+                // 处理本地文件路径
+                try {
+                  const response = await fetch(videoItem.filePath)
+                  const videoBlob = await response.blob()
+                  const newBlobUrl = URL.createObjectURL(videoBlob)
+                  console.log('已从本地文件路径创建Blob URL:', newBlobUrl)
+                  return {
+                    ...videoItem,
+                    blobUrl: newBlobUrl
+                  }
+                } catch (fileError) {
+                  console.error(`处理本地文件失败 (索引${originalIndex}):`, fileError)
+                  return null
+                }
+              } else {
+                return videoItem
+              }
+            }
+            // 如果是旧格式的URL字符串
+            else if (typeof videoItem === 'string') {
+              // 检查是否是Base64数据URL
+              if (videoItem.startsWith('data:video/')) {
+                // 如果是Base64数据URL，创建新的Blob URL用于播放
+                console.log('检测到Base64数据URL，创建Blob URL:', videoItem)
+                try {
+                  // 从数据URL创建Blob对象
+                  const parts = videoItem.split(';base64,')
+                  const contentType = parts[0].split(':')[1]
+                  const raw = window.atob(parts[1])
+                  const rawLength = raw.length
+                  const uInt8Array = new Uint8Array(rawLength)
+                  
+                  for (let i = 0; i < rawLength; ++i) {
+                    uInt8Array[i] = raw.charCodeAt(i)
+                  }
+                  
+                  const videoBlob = new Blob([uInt8Array], { type: contentType })
+                  const newBlobUrl = URL.createObjectURL(videoBlob)
+                  console.log('已将Base64数据URL转换为Blob URL:', newBlobUrl)
+                  // 返回视频对象，包含原始base64数据和新的Blob URL
+                  return {
+                    base64Data: videoItem,
+                    blobUrl: newBlobUrl
+                  }
+                } catch (dataUrlError) {
+                  console.error(`处理Base64数据URL失败 (索引${originalIndex}):`, dataUrlError)
+                  return null
+                }
+              } else if (videoItem.startsWith('blob:')) {
+                // 检测到旧的Blob URL，已经失效，跳过
+                console.warn(`检测到已失效的Blob URL，将从列表中移除 (索引${originalIndex}):`, videoItem)
+                return null
+              } else {
+                // 处理本地文件路径
+                try {
+                  const response = await fetch(videoItem)
+                  const videoBlob = await response.blob()
+                  const newBlobUrl = URL.createObjectURL(videoBlob)
+                  console.log('已从本地文件路径创建Blob URL:', newBlobUrl)
+                  // 返回视频对象，包含文件路径和新的Blob URL
+                  return {
+                    filePath: videoItem,
+                    blobUrl: newBlobUrl
+                  }
+                } catch (fileError) {
+                  console.error(`处理本地文件失败 (索引${originalIndex}):`, fileError)
+                  return null
+                }
+              }
+            }
+            // 无效的视频格式
+            else {
+              console.warn(`检测到无效的视频格式，将从列表中移除 (索引${originalIndex}):`, videoItem)
+              return null
+            }
+          } catch (error) {
+            console.error(`处理视频URL失败 (索引${originalIndex}):`, error)
+            // 如果处理失败，返回null表示这个URL无效
+            return null
+          }
+        }
+        
+        // 并发处理所有视频URL
+        const processAllVideos = async () => {
+          const processedVideos = await Promise.all(
+            parsedVideos.map((video, index) => processVideoUrl(video, index))
+          )
+          
+          // 过滤掉处理失败的视频
+          const validVideos = processedVideos.filter(video => video !== null)
+          
+          // 更新videos数组
+          videos.value = validVideos
+          
+          // 更新localStorage，确保存储的是持久化数据而不是临时Blob URL
+          const videosToStore = validVideos.map(video => {
+            if (typeof video === 'object' && video !== null) {
+              // 只存储base64数据或文件路径，不存储临时的Blob URL
+              return {
+                base64Data: video.base64Data,
+                filePath: video.filePath
+              }
+            }
+            return video
+          })
+          
+          localStorage.setItem('photoReconstructionVideos', JSON.stringify(videosToStore))
+          
+          // 为每个视频生成缩略图
+          videos.value.forEach((video, index) => {
+            generateThumbnail(typeof video === 'object' ? video.blobUrl : video, index)
+          })
+          
+          // 从本地存储加载重建状态
+          const savedStatuses = localStorage.getItem('reconstructStatuses')
+          let statusesObj = {}
+          if (savedStatuses) {
+            statusesObj = JSON.parse(savedStatuses)
+          }
+          
+          // 为每个视频加载或初始化重建状态
+          videos.value.forEach((_, index) => {
+            // 检查是否存在PLY文件URL，如果存在则标记为已完成
+            const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+            if (plyUrl) {
+              updateReconstructStatus(index, 'completed', 100)
+            } else {
+              // 使用本地存储的状态或默认为未开始
+              const savedStatus = statusesObj[index]
+              if (savedStatus) {
+                updateReconstructStatus(index, savedStatus.status, savedStatus.progress)
+              } else {
+                updateReconstructStatus(index, 'not_started', 0)
+              }
+            }
+          })
+          
+          // 检查是否需要处理路由参数（自动重建）
+          if (route.query.autoReconstruct === 'true') {
+            const videoIndex = parseInt(route.query.videoIndex) || videos.value.length - 1
+            if (videoIndex >= 0 && videoIndex < videos.value.length) {
+              startReconstruction(videoIndex)
+              // 清除查询参数，避免重复触发
+              router.replace({ query: {} })
+            }
+          }
+          
+          // 更新选中的视频索引和对应的PLY文件URL
+          const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
+          if (currentSelectedIndex === 'default') {
+            selectedVideoIndex.value = 'default'
+            localStorage.setItem('currentPlyUrl', '/supersplat-viewer/scene.compressed.ply')
+          } else if (currentSelectedIndex !== null) {
+            const index = parseInt(currentSelectedIndex)
+            if (!isNaN(index) && index >= 0 && index < videos.value.length) {
+              selectedVideoIndex.value = index
+              const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+              localStorage.setItem('currentPlyUrl', plyUrl || '')
+            }
+          }
+        }
+        
+        // 启动视频处理并等待完成
+        await processAllVideos()
       } else {
         videos.value = []
       }
-      
-      // 等待DOM更新后执行后续操作
-      setTimeout(() => {
-        // 为每个视频生成缩略图
-        videos.value.forEach((video, index) => {
-          generateThumbnail(video, index)
-        })
-        
-        // 从本地存储加载重建状态
-        const savedStatuses = localStorage.getItem('reconstructStatuses')
-        let statusesObj = {}
-        if (savedStatuses) {
-          statusesObj = JSON.parse(savedStatuses)
-        }
-        
-        // 为每个视频加载或初始化重建状态
-        videos.value.forEach((_, index) => {
-          // 检查是否存在PLY文件URL，如果存在则标记为已完成
-          const plyUrl = localStorage.getItem(`plyUrl_${index}`)
-          if (plyUrl) {
-            updateReconstructStatus(index, 'completed', 100)
-          } else {
-            // 使用本地存储的状态或默认为未开始
-            const savedStatus = statusesObj[index]
-            if (savedStatus) {
-              updateReconstructStatus(index, savedStatus.status, savedStatus.progress)
-            } else {
-              updateReconstructStatus(index, 'not_started', 0)
-            }
-          }
-        })
-        
-        // 检查是否需要处理路由参数（自动重建）
-        if (route.query.autoReconstruct === 'true') {
-          const videoIndex = parseInt(route.query.videoIndex) || videos.value.length - 1
-          if (videoIndex >= 0 && videoIndex < videos.value.length) {
-            startReconstruction(videoIndex)
-            // 清除查询参数，避免重复触发
-            router.replace({ query: {} })
-          }
-        }
-        
-        // 更新选中的视频索引和对应的PLY文件URL
-        const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
-        if (currentSelectedIndex === 'default') {
-          selectedVideoIndex.value = 'default'
-          localStorage.setItem('currentPlyUrl', '/supersplat-viewer/scene.compressed.ply')
-        } else if (currentSelectedIndex !== null) {
-          const index = parseInt(currentSelectedIndex)
-          if (!isNaN(index) && index >= 0 && index < videos.value.length) {
-            selectedVideoIndex.value = index
-            const plyUrl = localStorage.getItem(`plyUrl_${index}`)
-            localStorage.setItem('currentPlyUrl', plyUrl || '')
-          }
-        }
-      }, 0)
     } else {
       videos.value = []
     }
@@ -276,8 +416,23 @@ const closeVideoPlayer = () => {
   currentVideo.value = ''
 }
 
+// 在组件卸载时释放所有Blob URL资源
+onUnmounted(() => {
+  videos.value.forEach(videoItem => {
+    // 提取实际的视频URL，处理对象和字符串两种情况
+    const actualUrl = typeof videoItem === 'object' ? videoItem.blobUrl : videoItem;
+    if (actualUrl && typeof actualUrl === 'string' && actualUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(actualUrl)
+      console.log('已释放Blob URL资源:', actualUrl)
+    }
+  })
+})
 
-
+// 在组件挂载时加载视频
+onMounted(() => {
+  console.log('VideoPage组件挂载，开始加载视频...')
+  loadVideos()
+})
 
 
 // 更新重建状态并保存到本地存储
@@ -329,16 +484,26 @@ const getReconstructStatusColor = (status) => {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 // 通用的3D重建核心函数
-const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) => {
+const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, onComplete) => {
   try {
     // 1. 从视频URL获取视频文件
     console.log('处理视频URL:', videoUrl)
     let videoBlob;
+    let actualVideoUrl = videoUrl;
     
-    if (videoUrl.startsWith('data:')) {
+    // 如果是视频元数据对象，获取实际的视频URL
+    if (typeof videoUrl === 'object' && videoUrl !== null) {
+      if (videoUrl.blobUrl) {
+        actualVideoUrl = videoUrl.blobUrl;
+      } else if (videoUrl.filePath) {
+        actualVideoUrl = videoUrl.filePath;
+      }
+    }
+    
+    if (actualVideoUrl.startsWith('data:')) {
       // 处理Data URL（上传的视频）
-      console.log('处理Data URL:', videoUrl)
-      const base64Data = videoUrl.split(',')[1]
+      console.log('处理Data URL:', actualVideoUrl)
+      const base64Data = actualVideoUrl.split(',')[1]
       const byteCharacters = atob(base64Data)
       const byteNumbers = new Array(byteCharacters.length)
       for (let i = 0; i < byteCharacters.length; i++) {
@@ -347,18 +512,65 @@ const perform3DReconstruction = async (videoUrl, onProgressUpdate, onComplete) =
       const byteArray = new Uint8Array(byteNumbers)
       videoBlob = new Blob([byteArray], { type: 'video/mp4' })
       console.log('Data URL读取成功，Blob大小:', videoBlob.size)
-    } else if (videoUrl.startsWith('blob:')) {
+      
+      // 创建一个新的Blob URL用于播放
+      const newBlobUrl = URL.createObjectURL(videoBlob)
+      
+      // 更新videos数组中的视频对象
+      if (typeof videos.value[videoIndex] === 'object') {
+        videos.value[videoIndex].blobUrl = newBlobUrl;
+      } else {
+        // 如果是旧格式，转换为新的对象格式
+        videos.value[videoIndex] = {
+          base64Data: actualVideoUrl,
+          blobUrl: newBlobUrl
+        };
+      }
+      
+      console.log('已将Data URL转换为新的Blob URL用于播放:', newBlobUrl)
+    } else if (actualVideoUrl.startsWith('blob:')) {
       // 处理Blob URL
-      console.log('处理Blob URL:', videoUrl)
-      const response = await fetch(videoUrl)
+      console.log('处理Blob URL:', actualVideoUrl)
+      const response = await fetch(actualVideoUrl)
       videoBlob = await response.blob()
       console.log('Blob URL读取成功，Blob大小:', videoBlob.size)
+      
+      // 创建一个新的Blob URL
+      const newBlobUrl = URL.createObjectURL(videoBlob)
+      
+      // 更新videos数组中的视频对象
+      if (typeof videos.value[videoIndex] === 'object') {
+        videos.value[videoIndex].blobUrl = newBlobUrl;
+      } else {
+        // 如果是旧格式，转换为新的对象格式
+        videos.value[videoIndex] = {
+          blobUrl: newBlobUrl
+        };
+      }
+      
+      console.log('已更新blob URL为新的引用:', newBlobUrl)
     } else {
       // 处理本地文件路径（录制的视频）
-      console.log('处理本地文件路径:', videoUrl)
-      const response = await fetch(videoUrl)
+      console.log('处理本地文件路径:', actualVideoUrl)
+      const response = await fetch(actualVideoUrl)
       videoBlob = await response.blob()
       console.log('本地文件读取成功，Blob大小:', videoBlob.size)
+      
+      // 创建一个新的Blob URL
+      const newBlobUrl = URL.createObjectURL(videoBlob)
+      
+      // 更新videos数组中的视频对象
+      if (typeof videos.value[videoIndex] === 'object') {
+        videos.value[videoIndex].blobUrl = newBlobUrl;
+      } else {
+        // 如果是旧格式，转换为新的对象格式
+        videos.value[videoIndex] = {
+          filePath: actualVideoUrl,
+          blobUrl: newBlobUrl
+        };
+      }
+      
+      console.log('已将本地文件路径转换为Blob URL:', newBlobUrl)
     }
     
     // 2. 创建FormData
@@ -431,6 +643,7 @@ const startReconstruction = async (videoIndex) => {
     
     await perform3DReconstruction(
       videoUrl,
+      videoIndex,
       (newProgress) => {
         updateReconstructStatus(videoIndex, 'processing', newProgress)
       },
@@ -442,7 +655,14 @@ const startReconstruction = async (videoIndex) => {
           const response = await fetch(plyUrl)
           const blob = await response.blob()
           const arrayBuffer = await blob.arrayBuffer()
-          const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+          
+          // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
+          const uint8Array = new Uint8Array(arrayBuffer)
+          let binaryString = ''
+          for (let i = 0; i < uint8Array.length; i++) {
+            binaryString += String.fromCharCode(uint8Array[i])
+          }
+          const base64Data = btoa(binaryString)
           
           // 保存到本地文件系统
           const fileName = `ply_${videoIndex}_${Date.now()}.ply`
@@ -510,8 +730,8 @@ const loadDefaultPly = () => {
 }
 
 // 组件挂载时初始化所有视频重建状态
-onMounted(() => {
-  loadVideos()
+onMounted(async () => {
+  await loadVideos()
   
   // 加载之前保存的选择状态
   const currentSelectedIndex = localStorage.getItem('selectedVideoIndex')
@@ -549,16 +769,36 @@ onMounted(() => {
 })
 
 // 删除视频
-const deleteVideo = (index) => {
+const deleteVideo = async (index) => {
   if (confirm('确定要删除这个视频吗？')) {
     // 1. 检查被删除的视频是否是当前选中的视频
     const isCurrentSelected = selectedVideoIndex.value === index;
     
-    // 2. 删除被删除视频的PLY文件URL
-    localStorage.removeItem(`plyUrl_${index}`)
+    // 2. 获取被删除视频的PLY文件路径并删除本地文件
+    const plyUrl = localStorage.getItem(`plyUrl_${index}`);
+    if (plyUrl) {
+      // 只删除本地文件系统中的PLY文件，不删除远程URL
+      if (!plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
+        try {
+          // 从文件名中提取路径
+          const fileName = plyUrl.split('/').pop();
+          // 使用Filesystem删除文件
+          await Filesystem.deleteFile({
+            path: fileName,
+            directory: Directory.Data
+          });
+          console.log('已删除本地PLY文件:', fileName);
+        } catch (deleteError) {
+          console.error('删除本地PLY文件失败:', deleteError);
+          // 即使文件删除失败，也继续删除其他数据
+        }
+      }
+      // 删除PLY文件URL引用
+      localStorage.removeItem(`plyUrl_${index}`);
+    }
     
     // 3. 获取当前的重建状态
-    const savedStatuses = localStorage.getItem('reconstructStatuses')
+    const savedStatuses = localStorage.getItem('reconstructStatuses');
     let statusesObj = {};
     if (savedStatuses) {
       statusesObj = JSON.parse(savedStatuses);
@@ -571,9 +811,9 @@ const deleteVideo = (index) => {
     const totalVideos = videos.value.length;
     for (let i = index + 1; i < totalVideos; i++) {
       // 更新PLY文件URL的键
-      const plyUrl = localStorage.getItem(`plyUrl_${i}`);
-      if (plyUrl) {
-        localStorage.setItem(`plyUrl_${i - 1}`, plyUrl);
+      const currentPlyUrl = localStorage.getItem(`plyUrl_${i}`);
+      if (currentPlyUrl) {
+        localStorage.setItem(`plyUrl_${i - 1}`, currentPlyUrl);
         localStorage.removeItem(`plyUrl_${i}`);
       }
       
@@ -602,8 +842,8 @@ const deleteVideo = (index) => {
         localStorage.setItem('selectedVideoIndex', 0);
         
         // 更新currentPlyUrl为第一个视频对应的PLY文件URL
-        const plyUrl = localStorage.getItem(`plyUrl_0`);
-        localStorage.setItem('currentPlyUrl', plyUrl || '');
+        const newPlyUrl = localStorage.getItem(`plyUrl_0`);
+        localStorage.setItem('currentPlyUrl', newPlyUrl || '');
       } else {
         // 如果没有其他视频，重置selectedVideoIndex和currentPlyUrl
         selectedVideoIndex.value = null;
@@ -617,12 +857,12 @@ const deleteVideo = (index) => {
       localStorage.setItem('selectedVideoIndex', newSelectedIndex);
       
       // 更新currentPlyUrl为新选中视频对应的PLY文件URL
-      const plyUrl = localStorage.getItem(`plyUrl_${newSelectedIndex}`);
-      localStorage.setItem('currentPlyUrl', plyUrl || '');
+      const newPlyUrl = localStorage.getItem(`plyUrl_${newSelectedIndex}`);
+      localStorage.setItem('currentPlyUrl', newPlyUrl || '');
     }
     
     // 10. 重新生成缩略图和更新重建状态
-    loadVideos();
+    await loadVideos();
   }
 }
 

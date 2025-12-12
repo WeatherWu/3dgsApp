@@ -265,7 +265,7 @@ const removeVideo = (index) => {
 };
 
 // 保存视频到本地存储
-const saveVideoToStorage = (videoUrl) => {
+const saveVideoToStorage = (videoData) => {
   try {
     // 从本地存储获取现有视频列表
     const savedVideos = localStorage.getItem('photoReconstructionVideos');
@@ -275,8 +275,36 @@ const saveVideoToStorage = (videoUrl) => {
       videosList = JSON.parse(savedVideos);
     }
     
+    // 检查videoData类型，确保只保存必要的持久化数据
+    let videoToSave;
+    if (typeof videoData === 'object' && videoData !== null) {
+      // 如果是对象，提取持久化数据
+      videoToSave = {};
+      if (videoData.base64Data) {
+        videoToSave.base64Data = videoData.base64Data;
+      } else if (videoData.filePath) {
+        videoToSave.filePath = videoData.filePath;
+      } else if (videoData.blobUrl) {
+        // 如果只有blobUrl，保存为filePath（但注意blobUrl在页面刷新后会失效）
+        videoToSave.filePath = videoData.blobUrl;
+      }
+    } else if (typeof videoData === 'string') {
+      // 如果是字符串，根据URL类型保存不同的数据
+      if (videoData.startsWith('data:video/')) {
+        // 如果是Base64数据URL，保存base64Data
+        videoToSave = {
+          base64Data: videoData
+        };
+      } else {
+        // 否则保存为filePath
+        videoToSave = {
+          filePath: videoData
+        };
+      }
+    }
+    
     // 添加新视频
-    videosList.push(videoUrl);
+    videosList.push(videoToSave);
     
     // 保存回本地存储
     localStorage.setItem('photoReconstructionVideos', JSON.stringify(videosList));
@@ -317,24 +345,31 @@ const handleFileUpload = (event) => {
     return;
   }
   
-  // 保留现有视频，不再清空列表
-  // 如果已经有视频，不再清空，而是添加新视频
-  
   if (Capacitor.isNativePlatform()) {
     // 在原生平台上，使用Filesystem API保存文件
     handleNativeFileUpload(file);
   } else {
-    // 在Web平台上，使用blob URL代替base64字符串
+    // 在Web平台上，使用Blob URL临时存储视频，避免localStorage配额问题
     const videoBlobUrl = URL.createObjectURL(file);
     
-    // 将视频URL添加到数组
-    videos.value.push(videoBlobUrl);
+    // 创建视频元数据对象（不包含完整视频数据）
+    const videoMeta = {
+      id: Date.now(),
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      createdAt: new Date().toISOString(),
+      blobUrl: videoBlobUrl
+    };
+    
+    // 将视频元数据添加到数组
+    videos.value.push(videoMeta);
     
     // 设置上传视频的URL用于预览
     recordedVideoUrl.value = videoBlobUrl;
     
-    // 保存视频并显示重建确认弹窗
-    saveVideoToStorage(videoBlobUrl);
+    // 保存视频元数据到localStorage，不保存完整视频数据
+    saveVideoToStorage(videoMeta);
     
     console.log('视频上传完成，显示重建确认弹窗');
   }
