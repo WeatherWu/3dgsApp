@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { MediaCapture } from '@ionic-native/media-capture';
 import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 const router = useRouter();
 
@@ -137,8 +138,8 @@ const startRecording = async () => {
     // 如果已经有视频，先清空
     if (videos.value.length > 0) {
       videos.value = [];
-      show3DModel.value = false;
-      cleanupScene();
+      // show3DModel.value = false;
+      // cleanupScene();
     }
     
     console.log('开始录制视频流程');
@@ -196,10 +197,25 @@ const startRecording = async () => {
             }
           }
         }
+        
+        // 保存视频路径到本地存储
+        saveVideoToStorage(videoPath);
       } else {
-        // 在Web平台上，确保路径格式正确
-        if (!videoPath.startsWith('file://') && !videoPath.startsWith('http') && !videoPath.startsWith('blob:')) {
-          videoPath = 'file://' + videoPath;
+        // 在Web平台上，使用blob URL代替base64字符串
+        try {
+          // 从文件路径创建Blob对象（这在某些浏览器环境可能受限）
+          // 这里我们直接使用文件路径，因为在Web平台的MediaCapture可能返回不同的格式
+          // 如果需要更可靠的处理，可能需要修改这部分逻辑
+          if (!videoPath.startsWith('file://') && !videoPath.startsWith('http') && !videoPath.startsWith('blob:')) {
+            videoPath = 'file://' + videoPath;
+          }
+          
+          // 保存视频路径到本地存储
+          saveVideoToStorage(videoPath);
+        } catch (blobError) {
+          console.error('创建Blob URL失败:', blobError);
+          error.value = '视频处理失败，请重试';
+          return;
         }
       }
       
@@ -209,10 +225,7 @@ const startRecording = async () => {
       videos.value.push(videoPath);
       console.log('视频添加到数组成功，路径:', videoPath);
       
-      // 保存视频并显示重建确认弹窗
-      saveVideoToStorage(videoPath);
-      
-      console.log('视频录制完成，已跳转到视频管理页面');
+      console.log('视频录制完成');
     } else {
       throw new Error('未录制到视频文件');
     }
@@ -274,6 +287,7 @@ const saveVideoToStorage = (videoUrl) => {
     showReconstructConfirm.value = true;
   } catch (error) {
     console.error('保存视频到本地存储失败:', error);
+    error.value = '视频保存失败，请检查浏览器存储配额';
   }
 };
 
@@ -306,28 +320,67 @@ const handleFileUpload = (event) => {
   // 保留现有视频，不再清空列表
   // 如果已经有视频，不再清空，而是添加新视频
   
-  // 创建文件读取器
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    // 将视频数据URL添加到数组
-    const videoDataUrl = e.target.result;
-    videos.value.push(videoDataUrl);
+  if (Capacitor.isNativePlatform()) {
+    // 在原生平台上，使用Filesystem API保存文件
+    handleNativeFileUpload(file);
+  } else {
+    // 在Web平台上，使用blob URL代替base64字符串
+    const videoBlobUrl = URL.createObjectURL(file);
+    
+    // 将视频URL添加到数组
+    videos.value.push(videoBlobUrl);
     
     // 设置上传视频的URL用于预览
-    recordedVideoUrl.value = videoDataUrl;
+    recordedVideoUrl.value = videoBlobUrl;
     
     // 保存视频并显示重建确认弹窗
-    saveVideoToStorage(videoDataUrl);
+    saveVideoToStorage(videoBlobUrl);
     
     console.log('视频上传完成，显示重建确认弹窗');
-  };
-  reader.onerror = () => {
-    error.value = '读取视频文件失败';
-  };
-  reader.readAsDataURL(file);
+  }
   
   // 清空文件输入，以便可以再次选择同一个文件
   event.target.value = '';
+};
+
+// 处理原生平台的文件上传
+const handleNativeFileUpload = async (file) => {
+  try {
+    // 读取文件内容
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const fileData = e.target.result;
+      
+      // 在原生平台上保存文件
+      const fileName = `upload_${Date.now()}.${file.name.split('.').pop()}`;
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: fileData,
+        directory: Directory.Documents
+      });
+      
+      // 创建文件URL
+      const fileUrl = Capacitor.convertFileSrc(result.uri);
+      
+      // 将视频URL添加到数组
+      videos.value.push(fileUrl);
+      
+      // 设置上传视频的URL用于预览
+      recordedVideoUrl.value = fileUrl;
+      
+      // 保存视频并显示重建确认弹窗
+      saveVideoToStorage(fileUrl);
+      
+      console.log('原生平台视频上传完成，显示重建确认弹窗');
+    };
+    reader.onerror = () => {
+      error.value = '读取视频文件失败';
+    };
+    reader.readAsDataURL(file);
+  } catch (err) {
+    console.error('原生平台文件上传失败:', err);
+    error.value = '视频上传失败，请重试';
+  }
 };
 
 // 处理视频错误
@@ -340,6 +393,7 @@ const handleVideoError = (e) => {
 
 
 
+
 // 相机控制变量
 let mouseDown = false;
 let lastMouseX = 0;
@@ -347,8 +401,6 @@ let lastMouseY = 0;
 let rotationX = 0;
 let rotationY = 0;
 let scale = 1;
-
-
 
 
 
