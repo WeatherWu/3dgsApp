@@ -201,6 +201,7 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
     // 配置参数，设置noui: true禁用UI（避免DOM元素不存在错误）
     // 注意：当使用默认路径时，需要确保contentUrl格式正确
     // 修复：确保contents参数是File对象或null
+    // 添加noanim: true禁用自动旋转，但保持旋转模式浏览
     const config = {
       contentUrl: contentUrl,
       contents: contents instanceof File ? contents : null,
@@ -208,7 +209,7 @@ const initPlayCanvasApp = async (modelUrl = splatUrl.value) => {
       aa: false,
       poster: false,
       noui: true,
-      noanim: false,
+      noanim: true,
       ministats: false
     }
     
