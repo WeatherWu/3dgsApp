@@ -95,9 +95,13 @@ const requestPermissions = async () => {
         throw new Error('您的浏览器不支持视频录制功能');
       }
       
-      // 请求相机权限
+      // 请求相机权限，设置视频约束为1080P 30Hz
       const cameraStream = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 }
+        },
         audio: true 
       });
       
@@ -159,8 +163,11 @@ const startRecording = async () => {
     const options = {
       limit: 1,           // 限制录制1个视频
       duration: 5,        // 最大录制时间5秒
-      quality: 1,         // 质量 (0=低, 1=中, 2=高)
-      allowEdit: false    // 不允许编辑
+      quality: 2,         // 质量 (0=低, 1=中, 2=高)
+      allowEdit: false,   // 不允许编辑
+      videoWidth: 1920,   // 视频宽度（1080P）
+      videoHeight: 1080,  // 视频高度（1080P）
+      videoFrameRate: 30  // 视频帧率（30Hz）
     };
     
     // 录制视频 - 这会打开设备的相机应用
