@@ -7,107 +7,109 @@
       </button>
     </div>
     
-    <div class="page-header">
-      <h1><i class="fas fa-video"></i> 视频管理</h1>
-      <p class="page-description">查看和管理所有视频（录制和上传）</p>
-    </div>
+    <div class="video-page-container">
+      <div class="page-header">
+        <h1><i class="fas fa-video"></i> 视频管理</h1>
+        <p class="page-description">查看和管理所有视频（录制和上传）</p>
+      </div>
 
-    <!-- 视频列表 -->
-    <div v-if="videos.length > 0" class="video-list-section">
-      <h2><i class="fas fa-list"></i> 所有视频</h2>
-      <div class="video-grid">
-        <div 
-          v-for="(video, index) in videos" 
-          :key="index" 
-          class="video-item"
-          :class="{ 'selected': selectedVideoIndex === index }"
-          @click="selectVideo(index)"
-        >
-          <div class="video-thumbnail-container">
-            <video 
-              :src="typeof video === 'object' ? (video.blobUrl || video.filePath) : video" 
-              class="video-thumbnail"
-              @loadeddata="generateThumbnail(typeof video === 'object' ? (video.blobUrl || video.filePath) : video, index)"
-              preload="metadata"
-            ></video>
-            <div v-if="videoThumbnails[index]" class="video-cover" @click.stop="playVideo(typeof video === 'object' ? (video.blobUrl || video.filePath) : video)">
-              <img :src="videoThumbnails[index]" alt="视频封面" class="cover-image" />
-              <div class="play-overlay">
-                <i class="fas fa-play"></i>
-              </div>
-            </div>
-            <div v-else class="video-placeholder">
-              <i class="fas fa-video"></i>
-              <span>加载中...</span>
-            </div>
-          </div>
-          <div class="video-info">
-            <span class="video-title">视频 {{ index + 1 }}</span>
-            
-            <!-- 重建进度显示 -->
-            <div class="reconstruct-status-section">
-              <div class="status-indicator">
-                <span 
-                  class="status-dot" 
-                  :style="{ backgroundColor: getReconstructStatusColor(reconstructStatuses[index]?.status || 'not_started') }"
-                ></span>
-                <span class="status-text">{{ getReconstructStatusText(reconstructStatuses[index]?.status || 'not_started') }}</span>
-              </div>
-              
-              <div v-if="reconstructStatuses[index]?.status === 'processing'" class="progress-container">
-                <div class="progress-bar">
-                  <div 
-                    class="progress-fill" 
-                    :style="{ width: reconstructStatuses[index]?.progress + '%' }"
-                  ></div>
+      <!-- 视频列表 -->
+      <div v-if="videos.length > 0" class="video-list-section">
+        <h2><i class="fas fa-list"></i> 所有视频</h2>
+        <div class="video-grid">
+          <div 
+            v-for="(video, index) in videos" 
+            :key="index" 
+            class="video-item"
+            :class="{ 'selected': selectedVideoIndex === index }"
+            @click="selectVideo(index)"
+          >
+            <div class="video-thumbnail-container">
+              <video 
+                :src="typeof video === 'object' ? (video.blobUrl || video.filePath) : video" 
+                class="video-thumbnail"
+                @loadeddata="generateThumbnail(typeof video === 'object' ? (video.blobUrl || video.filePath) : video, index)"
+                preload="metadata"
+              ></video>
+              <div v-if="videoThumbnails[index]" class="video-cover" @click.stop="playVideo(typeof video === 'object' ? (video.blobUrl || video.filePath) : video)">
+                <img :src="videoThumbnails[index]" alt="视频封面" class="cover-image" />
+                <div class="play-overlay">
+                  <i class="fas fa-play"></i>
                 </div>
-                <span class="progress-text">{{ reconstructStatuses[index]?.progress }}%</span>
               </div>
-              
-              <div v-if="reconstructStatuses[index]?.timestamp" class="status-timestamp">
-                <i class="fas fa-clock"></i>
-                {{ reconstructStatuses[index]?.timestamp }}
+              <div v-else class="video-placeholder">
+                <i class="fas fa-video"></i>
+                <span>加载中...</span>
               </div>
             </div>
-            
-            <div class="video-actions">
-              <button class="action-btn play-btn" @click.stop="playVideo(typeof video === 'object' ? video.blobUrl : video)">
-                <i class="fas fa-play"></i>
-              </button>
-              <button class="action-btn reconstruct-btn" @click.stop="startReconstruction(index)" :disabled="reconstructStatuses[index]?.status === 'processing'">
-                <i class="fas fa-cube"></i>
-              </button>
-              <button class="action-btn reset-btn" @click.stop="resetReconstructStatus(index)" :disabled="reconstructStatuses[index]?.status === 'processing'">
-                <i class="fas fa-redo"></i>
-              </button>
-              <button class="action-btn delete-btn" @click.stop="deleteVideo(index)">
-                <i class="fas fa-trash"></i>
-              </button>
+            <div class="video-info">
+              <span class="video-title">视频 {{ index + 1 }}</span>
+              
+              <!-- 重建进度显示 -->
+              <div class="reconstruct-status-section">
+                <div class="status-indicator">
+                  <span 
+                    class="status-dot" 
+                    :style="{ backgroundColor: getReconstructStatusColor(reconstructStatuses[index]?.status || 'not_started') }"
+                  ></span>
+                  <span class="status-text">{{ getReconstructStatusText(reconstructStatuses[index]?.status || 'not_started') }}</span>
+                </div>
+                
+                <div v-if="reconstructStatuses[index]?.status === 'processing'" class="progress-container">
+                  <div class="progress-bar">
+                    <div 
+                      class="progress-fill" 
+                      :style="{ width: reconstructStatuses[index]?.progress + '%' }"
+                    ></div>
+                  </div>
+                  <span class="progress-text">{{ reconstructStatuses[index]?.progress }}%</span>
+                </div>
+                
+                <div v-if="reconstructStatuses[index]?.timestamp" class="status-timestamp">
+                  <i class="fas fa-clock"></i>
+                  {{ reconstructStatuses[index]?.timestamp }}
+                </div>
+              </div>
+              
+              <div class="video-actions">
+                <button class="action-btn play-btn" @click.stop="playVideo(typeof video === 'object' ? video.blobUrl : video)">
+                  <i class="fas fa-play"></i>
+                </button>
+                <button class="action-btn reconstruct-btn" @click.stop="startReconstruction(index)" :disabled="reconstructStatuses[index]?.status === 'processing'">
+                  <i class="fas fa-cube"></i>
+                </button>
+                <button class="action-btn reset-btn" @click.stop="resetReconstructStatus(index)" :disabled="reconstructStatuses[index]?.status === 'processing'">
+                  <i class="fas fa-redo"></i>
+                </button>
+                <button class="action-btn delete-btn" @click.stop="deleteVideo(index)">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 空状态 -->
-    <div v-else class="empty-state-content">
-      <i class="fas fa-video-slash"></i>
-      <h3>暂无视频</h3>
-      <p>请前往主页录制或上传视频</p>
-    </div>
+      <!-- 空状态 -->
+      <div v-else class="empty-state-content">
+        <i class="fas fa-video-slash"></i>
+        <h3>暂无视频</h3>
+        <p>请前往主页录制或上传视频</p>
+      </div>
 
-    <!-- 视频播放器弹窗 -->
-    <div v-if="showVideoPlayer" class="modal">
-      <div class="modal-overlay" @click="closeVideoPlayer"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3><i class="fas fa-play-circle"></i> 视频播放</h3>
-          <button class="close-button" @click="closeVideoPlayer">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="modal-body">
-          <video :src="currentVideo" class="fullscreen-video" controls autoplay></video>
+      <!-- 视频播放器弹窗 -->
+      <div v-if="showVideoPlayer" class="modal">
+        <div class="modal-overlay" @click="closeVideoPlayer"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3><i class="fas fa-play-circle"></i> 视频播放</h3>
+            <button class="close-button" @click="closeVideoPlayer">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <video :src="currentVideo" class="fullscreen-video" controls autoplay></video>
+          </div>
         </div>
       </div>
     </div>
@@ -322,7 +324,64 @@ const loadVideos = async () => {
               // 使用本地存储的状态或默认为未开始
               const savedStatus = statusesObj[index]
               if (savedStatus) {
-                updateReconstructStatus(index, savedStatus.status, savedStatus.progress)
+                updateReconstructStatus(index, savedStatus.status, savedStatus.progress, savedStatus.taskId)
+                
+                // 检查是否有正在处理的任务，如果有，恢复轮询
+                if (savedStatus.status === 'processing' && savedStatus.taskId) {
+                  console.log(`发现正在处理的任务，视频索引: ${index}，任务ID: ${savedStatus.taskId}，当前进度: ${savedStatus.progress}%`)
+                  
+                  // 恢复轮询
+                  checkProgress(
+                    savedStatus.taskId,
+                    index,
+                    (newProgress, taskId) => {
+                      updateReconstructStatus(index, 'processing', newProgress, taskId)
+                    },
+                    async (plyUrl) => {
+                      updateReconstructStatus(index, 'completed', 100, savedStatus.taskId)
+                      
+                      // 下载PLY文件到本地
+                      try {
+                        const response = await fetch(plyUrl)
+                        const blob = await response.blob()
+                        const arrayBuffer = await blob.arrayBuffer()
+                        
+                        // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
+                        const uint8Array = new Uint8Array(arrayBuffer)
+                        let binaryString = ''
+                        for (let i = 0; i < uint8Array.length; i++) {
+                          binaryString += String.fromCharCode(uint8Array[i])
+                        }
+                        const base64Data = btoa(binaryString)
+                        
+                        // 保存到本地文件系统
+                        const fileName = `ply_${index}_${Date.now()}.ply`
+                        await Filesystem.writeFile({
+                          path: fileName,
+                          data: base64Data,
+                          directory: Directory.Data,
+                          recursive: true
+                        })
+                        
+                        // 保存本地文件路径到localStorage
+                        localStorage.setItem(`plyUrl_${index}`, fileName)
+                        localStorage.setItem('currentPlyUrl', fileName)
+                        
+                        // 同时更新选中的视频索引
+                        localStorage.setItem('selectedVideoIndex', index)
+                        selectedVideoIndex.value = index
+                        
+                        console.log('PLY文件已下载并保存到本地:', fileName)
+                      } catch (downloadError) {
+                        console.error('下载PLY文件失败:', downloadError)
+                        // 只使用本地文件，下载失败时不保存远程URL
+                        alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
+                        // 重置重建状态
+                        resetReconstructStatus(index)
+                      }
+                    }
+                  )
+                }
               } else {
                 updateReconstructStatus(index, 'not_started', 0)
               }
@@ -436,11 +495,12 @@ onMounted(() => {
 
 
 // 更新重建状态并保存到本地存储
-const updateReconstructStatus = (videoIndex, status, progress = 0) => {
+const updateReconstructStatus = (videoIndex, status, progress = 0, taskId = null) => {
   const newStatus = {
     status, // 'not_started', 'processing', 'completed', 'error'
     progress, // 0-100
-    timestamp: new Date().toLocaleString()
+    timestamp: new Date().toLocaleString(),
+    taskId // 保存任务ID，用于页面重启后恢复轮询
   }
   
   reconstructStatuses.value = {
@@ -590,46 +650,54 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     const result = await response.json()
     const taskId = result.task_id
     
-    // 4. 轮询重建进度
-    const checkProgress = async () => {
-      const statusResponse = await fetch(`${apiBaseUrl}/api/task/${taskId}`)
-      const statusData = await statusResponse.json()
-      
-      let taskStatus = statusData.status
-      const progress = statusData.progress || 0
-      
-      // 调用进度更新回调
-      onProgressUpdate(progress)
-      
-      // 如果任务未完成，继续轮询
-      if (taskStatus !== 'completed' && taskStatus !== 'failed') {
-        setTimeout(checkProgress, 1000)
-      } else if (taskStatus === 'completed') {
-        // 任务完成，获取PLY文件URL
-        let plyUrl = statusData.ply_url
-        // 确保PLY文件URL是完整的绝对URL
-        if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
-          // 如果是相对路径，与apiBaseUrl结合
-          if (plyUrl.startsWith('/')) {
-            // 如果是根相对路径，直接拼接
-            plyUrl = apiBaseUrl + plyUrl
-          } else {
-            // 如果是相对路径，添加斜杠后拼接
-            plyUrl = apiBaseUrl + '/' + plyUrl
-          }
-        }
-        onComplete(plyUrl)
-      } else {
-        throw new Error('3D重建失败')
-      }
-    }
+    // 更新重建状态，保存taskId
+    onProgressUpdate(0, taskId)
     
-    // 开始轮询
-    checkProgress()
-    
+    // 4. 开始轮询重建进度
+    checkProgress(taskId, videoIndex, onProgressUpdate, onComplete)
   } catch (error) {
     console.error('3D重建过程中发生错误:', error)
     throw error
+  }
+}
+
+// 独立的轮询进度检查函数，支持页面重启后恢复轮询
+const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) => {
+  try {
+    const statusResponse = await fetch(`${apiBaseUrl}/api/task/${taskId}`)
+    const statusData = await statusResponse.json()
+    
+    let taskStatus = statusData.status
+    const progress = statusData.progress || 0
+    
+    // 调用进度更新回调，同时保存taskId
+    onProgressUpdate(progress, taskId)
+    
+    // 如果任务未完成，继续轮询
+    if (taskStatus !== 'completed' && taskStatus !== 'failed') {
+      setTimeout(() => checkProgress(taskId, videoIndex, onProgressUpdate, onComplete), 1000)
+    } else if (taskStatus === 'completed') {
+      // 任务完成，获取PLY文件URL
+      let plyUrl = statusData.ply_url
+      // 确保PLY文件URL是完整的绝对URL
+      if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
+        // 如果是相对路径，与apiBaseUrl结合
+        if (plyUrl.startsWith('/')) {
+          // 如果是根相对路径，直接拼接
+          plyUrl = apiBaseUrl + plyUrl
+        } else {
+          // 如果是相对路径，添加斜杠后拼接
+          plyUrl = apiBaseUrl + '/' + plyUrl
+        }
+      }
+      onComplete(plyUrl)
+    } else {
+      throw new Error('3D重建失败')
+    }
+  } catch (error) {
+    console.error('轮询进度时发生错误:', error)
+    // 更新状态为错误
+    updateReconstructStatus(videoIndex, 'error', 0, taskId)
   }
 }
 
@@ -644,8 +712,8 @@ const startReconstruction = async (videoIndex) => {
     await perform3DReconstruction(
       videoUrl,
       videoIndex,
-      (newProgress) => {
-        updateReconstructStatus(videoIndex, 'processing', newProgress)
+      (newProgress, taskId) => {
+        updateReconstructStatus(videoIndex, 'processing', newProgress, taskId)
       },
       async (plyUrl) => {
         updateReconstructStatus(videoIndex, 'completed', 100)
@@ -771,10 +839,56 @@ onMounted(async () => {
 // 删除视频
 const deleteVideo = async (index) => {
   if (confirm('确定要删除这个视频吗？')) {
-    // 1. 检查被删除的视频是否是当前选中的视频
+    // 1. 检查是否正在重建该视频，如果是，则发送终止请求
+    const status = reconstructStatuses.value[index];
+    if (status && status.status === 'processing' && status.taskId) {
+      try {
+        await fetch(`${apiBaseUrl}/api/task/${status.taskId}/terminate`, {
+          method: 'POST'
+        });
+        console.log('已发送重建终止请求，任务ID:', status.taskId);
+      } catch (terminateError) {
+        console.error('终止重建请求失败:', terminateError);
+        // 即使终止请求失败，也继续删除视频
+      }
+    }
+    
+    // 2. 检查被删除的视频是否是当前选中的视频
     const isCurrentSelected = selectedVideoIndex.value === index;
     
-    // 2. 获取被删除视频的PLY文件路径并删除本地文件
+    // 3. 获取要删除的视频对象
+    const videoToDelete = videos.value[index];
+    
+    // 4. 删除实际的视频文件
+    if (videoToDelete && typeof videoToDelete === 'object') {
+      if (videoToDelete.filePath) {
+        // 如果是文件路径格式，删除实际文件
+        try {
+          // 提取文件名（根据不同平台的路径格式处理）
+          let fileName;
+          if (videoToDelete.filePath.includes('/')) {
+            fileName = videoToDelete.filePath.split('/').pop();
+          } else if (videoToDelete.filePath.includes('\\')) {
+            fileName = videoToDelete.filePath.split('\\').pop();
+          } else {
+            fileName = videoToDelete.filePath;
+          }
+          
+          // 使用Filesystem删除文件
+          await Filesystem.deleteFile({
+            path: fileName,
+            directory: Directory.Data
+          });
+          console.log('已删除本地视频文件:', fileName);
+        } catch (videoDeleteError) {
+          console.error('删除本地视频文件失败:', videoDeleteError);
+          // 即使文件删除失败，也继续删除其他数据
+        }
+      }
+      // 对于Base64格式，不需要删除实际文件，因为数据存储在localStorage中
+    }
+    
+    // 5. 获取被删除视频的PLY文件路径并删除本地文件
     const plyUrl = localStorage.getItem(`plyUrl_${index}`);
     if (plyUrl) {
       // 只删除本地文件系统中的PLY文件，不删除远程URL
@@ -797,17 +911,17 @@ const deleteVideo = async (index) => {
       localStorage.removeItem(`plyUrl_${index}`);
     }
     
-    // 3. 获取当前的重建状态
+    // 6. 获取当前的重建状态
     const savedStatuses = localStorage.getItem('reconstructStatuses');
     let statusesObj = {};
     if (savedStatuses) {
       statusesObj = JSON.parse(savedStatuses);
     }
     
-    // 4. 删除被删除视频的重建状态
+    // 7. 删除被删除视频的重建状态
     delete statusesObj[index];
     
-    // 5. 更新后续视频的索引和对应的PLY文件URL
+    // 8. 更新后续视频的索引和对应的PLY文件URL
     const totalVideos = videos.value.length;
     for (let i = index + 1; i < totalVideos; i++) {
       // 更新PLY文件URL的键
@@ -824,16 +938,16 @@ const deleteVideo = async (index) => {
       }
     }
     
-    // 6. 保存更新后的重建状态
+    // 9. 保存更新后的重建状态
     localStorage.setItem('reconstructStatuses', JSON.stringify(statusesObj));
     
-    // 7. 删除视频
+    // 10. 删除视频
     videos.value.splice(index, 1);
     
-    // 8. 更新本地存储中的视频列表
+    // 11. 更新本地存储中的视频列表
     localStorage.setItem('photoReconstructionVideos', JSON.stringify(videos.value));
     
-    // 9. 如果被删除的视频是当前选中的视频，需要更新selectedVideoIndex和currentPlyUrl
+    // 12. 如果被删除的视频是当前选中的视频，需要更新selectedVideoIndex和currentPlyUrl
     if (isCurrentSelected) {
       // 如果还有其他视频，选择第一个视频
       if (videos.value.length > 0) {
@@ -861,7 +975,7 @@ const deleteVideo = async (index) => {
       localStorage.setItem('currentPlyUrl', newPlyUrl || '');
     }
     
-    // 10. 重新生成缩略图和更新重建状态
+    // 13. 重新生成缩略图和更新重建状态
     await loadVideos();
   }
 }
@@ -878,6 +992,34 @@ onUnmounted(() => {
 
 <style scoped>
 @import './VideoPage.css';
+
+/* 视频页面容器样式 - 实现滚动功能 */
+.video-page-container {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 20px 0;
+  scroll-behavior: smooth;
+  min-height: 0;
+}
+
+/* 自定义滚动条样式 */
+.video-page-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.video-page-container::-webkit-scrollbar-track {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.video-page-container::-webkit-scrollbar-thumb {
+  background: var(--color-tertiary);
+  border-radius: 4px;
+}
+
+.video-page-container::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
 
 /* 添加一些Vue组件特有的样式，覆盖CSS文件中的样式 */
 

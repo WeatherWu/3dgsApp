@@ -67,9 +67,11 @@ const confirmReconstruct = () => {
 // 取消三维重建
 const cancelReconstruct = () => {
   showReconstructConfirm.value = false;
+  recordedVideoUrl.value = '';
   // 用户可以继续录制新视频
   // 留在当前页面，不进行跳转
-  console.log('取消三维重建，继续在当前页面录制');
+  // 视频将继续保留在列表中
+  console.log('取消三维重建，准备继续录制，视频继续保留在列表中');
 };
 
 
