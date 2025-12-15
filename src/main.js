@@ -6,7 +6,7 @@ import App from './App.vue'
 // 导入组件
 import PhotoReconstruction from './components/PhotoReconstruction.vue'
 import VideoPage from './components/VideoPage.vue'
-import Supersplat from './components/Supersplat.vue'
+import Supersplat from './components/Spark.vue'
 
 // 路由配置
 const routes = [
@@ -29,11 +29,8 @@ router.beforeEach((to, from, next) => {
     const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
     const currentPlyUrl = localStorage.getItem('currentPlyUrl')
     
-    // 只有当满足以下条件之一时才允许访问：
-    // 1. selectedVideoIndex为具体索引值且有对应PLY文件（不为空）
-    // 2. 通过"加载默认PLY"按钮设置了正确的默认路径
-    const canAccess = (selectedVideoIndex !== null && selectedVideoIndex !== 'default' && currentPlyUrl && currentPlyUrl !== '') || 
-                     (selectedVideoIndex === 'default' && currentPlyUrl === '/supersplat-viewer/scene.compressed.ply')
+    // 只有当有有效的PLY文件URL时才允许访问
+    const canAccess = currentPlyUrl && currentPlyUrl !== ''
     
     if (canAccess) {
       next()

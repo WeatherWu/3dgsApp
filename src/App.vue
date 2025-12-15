@@ -43,17 +43,11 @@ onMounted(() => {
   const isValidDefaultState = selectedVideoIndex === 'default' && currentPlyUrl
   
   // 检查是否是有效的视频索引状态（具体数字索引且有对应PLY文件）
-  let isValidVideoState = false
-  if (selectedVideoIndex !== null && selectedVideoIndex !== 'default') {
+  if (selectedVideoIndex !== null) {
     const plyUrl = localStorage.getItem(`plyUrl_${selectedVideoIndex}`)
-    isValidVideoState = !!plyUrl
-  }
-  
-  // 对于default状态，保留已设置的currentPlyUrl
-  // 对于视频状态，确保currentPlyUrl正确
-  if (isValidVideoState) {
-    const plyUrl = localStorage.getItem(`plyUrl_${selectedVideoIndex}`)
-    localStorage.setItem('currentPlyUrl', plyUrl || '')
+    if (plyUrl) {
+      localStorage.setItem('currentPlyUrl', plyUrl)
+    }
   }
 })
 </script>

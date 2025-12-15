@@ -1,11 +1,4 @@
 <template>
-    <!-- 加载默认PLY文件选项（顶部居中，适合手机操作） -->
-    <div class="load-default-ply-section">
-      <button class="load-default-btn" @click="loadDefaultPly">
-        <i class="fas fa-download"></i>
-        加载默认PLY模型
-      </button>
-    </div>
     
     <div class="video-page-container">
       <div class="page-header">
@@ -923,22 +916,7 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
 
 
 
-// 加载默认PLY文件
-const loadDefaultPly = () => {
-  // 设置默认PLY文件的URL
-  const defaultPlyUrl = '/supersplat-viewer/scene.compressed.ply'
-  localStorage.setItem('currentPlyUrl', defaultPlyUrl)
-  
-  // 设置默认的selectedVideoIndex，确保底栏可用
-  localStorage.setItem('selectedVideoIndex', 'default')
-  
-  // 同时更新本地响应式变量，确保状态同步
-  selectedVideoIndex.value = 'default'
-  
-  // 直接跳转，不再需要复杂的延迟和检查
-  // 模型将在Supersplat.vue页面中加载
-  router.push('/supersplat')
-}
+
 
 // 组件挂载时初始化所有视频重建状态
 onMounted(async () => {
