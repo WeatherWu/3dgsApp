@@ -856,22 +856,22 @@ const deleteVideo = async (index) => {
     // 2. 检查被删除的视频是否是当前选中的视频
     const isCurrentSelected = selectedVideoIndex.value === index;
     
-    // 3. 获取要删除的视频对象
+    // 3. 获取要删除的视频URL
     const videoToDelete = videos.value[index];
     
-    // 4. 删除实际的视频文件
-    if (videoToDelete && typeof videoToDelete === 'object') {
-      if (videoToDelete.filePath) {
-        // 如果是文件路径格式，删除实际文件
+    // 4. 删除实际的视频文件（如果是本地文件）
+    if (videoToDelete && typeof videoToDelete === 'string') {
+      // 检查是否是本地文件路径（不是data URL或远程URL）
+      if (!videoToDelete.startsWith('data:') && !videoToDelete.startsWith('http://') && !videoToDelete.startsWith('https://')) {
         try {
           // 提取文件名（根据不同平台的路径格式处理）
           let fileName;
-          if (videoToDelete.filePath.includes('/')) {
-            fileName = videoToDelete.filePath.split('/').pop();
-          } else if (videoToDelete.filePath.includes('\\')) {
-            fileName = videoToDelete.filePath.split('\\').pop();
+          if (videoToDelete.includes('/')) {
+            fileName = videoToDelete.split('/').pop();
+          } else if (videoToDelete.includes('\\')) {
+            fileName = videoToDelete.split('\\').pop();
           } else {
-            fileName = videoToDelete.filePath;
+            fileName = videoToDelete;
           }
           
           // 使用Filesystem删除文件
@@ -885,7 +885,7 @@ const deleteVideo = async (index) => {
           // 即使文件删除失败，也继续删除其他数据
         }
       }
-      // 对于Base64格式，不需要删除实际文件，因为数据存储在localStorage中
+      // 对于Base64格式或远程URL，不需要删除实际文件
     }
     
     // 5. 获取被删除视频的PLY文件路径并删除本地文件
