@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { SplatMesh } from '@sparkjsdev/spark'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 
@@ -16,8 +17,8 @@ const splatUrl = ref(null)
 let scene = null
 let camera = null
 let renderer = null
+let controls = null
 let splatMesh = null
-let animationFrameId = null
 let handleResize = null
 let localUrl = null // 用于存储本地创建的Blob URL，以便后续释放
 
@@ -70,13 +71,6 @@ const isModelLoaded = ref(false)
 // 加载模型
 const loadModel = async (url) => {
   try {
-    // 停止之前的渲染循环
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId)
-      animationFrameId = null
-      console.log('已停止之前的渲染循环')
-    }
-    
     // 释放之前的资源
     releaseResources()
     
@@ -131,17 +125,12 @@ const loadModel = async (url) => {
     
     // 创建SplatMesh并添加到场景
     splatMesh = new SplatMesh({ url: modelUrl })
+    splatMesh.quaternion.set(1, 0, 0, 0)
     scene.add(splatMesh)
-    
-    // 设置相机位置和视角
-    camera.position.z = 3
     
     // 设置加载完成状态
     isLoading.value = false
     isModelLoaded.value = true
-    
-    // 启动渲染循环
-    startRenderLoop()
     
     console.log('模型加载完成，应用初始化状态:', {
       isLoading: isLoading.value,
@@ -172,11 +161,11 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
     
     // 创建Three.js场景
     scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xffffff)
+    scene.background = new THREE.Color(0x000000)
     
     // 创建相机
-    camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000) // 初始宽高比为1，将在resize时更新
-    camera.position.z = 3
+    camera = new THREE.PerspectiveCamera(75, 1, 0.01, 1000) // 初始宽高比为1，将在resize时更新
+    camera.position.set(0, 0, 1)
     
     // 创建渲染器
     renderer = new THREE.WebGLRenderer({ 
@@ -184,39 +173,50 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
       antialias: true,
       alpha: false
     })
-    renderer.setPixelRatio(window.devicePixelRatio)
     
-    // 添加环境光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1)
-    scene.add(ambientLight)
+    // 设置渲染器尺寸
+    const width = containerRef.value.clientWidth
+    const height = containerRef.value.clientHeight
+    renderer.setSize(width, height, false)
     
-    // 添加方向光
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5)
-    directionalLight.position.set(1, 1, 1)
-    scene.add(directionalLight)
+    // 初始化OrbitControls（围绕场景中心旋转）
+    controls = new OrbitControls(camera, canvasRef.value)
+    controls.target.set(0, 0, 0) // 设置旋转中心为场景原点
+    controls.enableDamping = true // 启用阻尼效果
+    controls.dampingFactor = 0.05 // 阻尼系数
+    controls.minDistance = 0.1 // 最小距离
+    controls.maxDistance = 10 // 最大距离
     
     // 定义窗口大小变化处理函数
     handleResize = () => {
-      if (containerRef.value && camera && renderer) {
-        // 获取容器的实际尺寸
-        const rect = containerRef.value.getBoundingClientRect()
-        const width = rect.width
-        const height = rect.height
-        
-        // 更新相机宽高比
+      const width = containerRef.value.clientWidth
+      const height = containerRef.value.clientHeight
+
+      // Only resize if necessary
+      const canvas = renderer.domElement
+      const needResize = canvas.width !== width || canvas.height !== height
+
+      if (needResize) {
+        renderer.setSize(width, height, false)
         camera.aspect = width / height
         camera.updateProjectionMatrix()
-        
-        // 更新渲染器尺寸
-        renderer.setSize(width, height)
         
         console.log('Three.js画布尺寸调整为:', width, 'x', height)
       }
     }
     
     // 添加事件监听器
-    window.addEventListener('resize', handleResize)
+    window.addEventListener('resize', () => {
+      setTimeout(() => { handleResize(); }, 100);
+    })
     handleResize()
+    
+    // 设置动画循环
+    renderer.setAnimationLoop(function animate(time) {
+      handleResize()
+      controls.update() // OrbitControls的update方法不需要camera参数
+      renderer.render(scene, camera)
+    })
     
     // 加载模型
     await loadModel(modelUrl)
@@ -229,29 +229,7 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
   }
 }
 
-// 启动渲染循环
-const startRenderLoop = () => {
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId)
-  }
-  
-  const animate = (time) => {
-    animationFrameId = requestAnimationFrame(animate)
-    
-    // 更新SplatMesh
-    if (splatMesh) {
-      splatMesh.update(time)
-    }
-    
-    // 渲染场景
-    if (renderer && scene && camera) {
-      renderer.render(scene, camera)
-    }
-  }
-  
-  animate(0)
-  console.log('渲染循环已启动')
-}
+// 渲染循环已通过renderer.setAnimationLoop实现，无需单独的startRenderLoop函数
 
 // 组件挂载时初始化
 onMounted(async () => {
@@ -274,9 +252,8 @@ onMounted(async () => {
 // 组件卸载时清理
 onUnmounted(() => {
   // 停止渲染循环
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId)
-    animationFrameId = null
+  if (renderer) {
+    renderer.setAnimationLoop(null)
     console.log('组件卸载时已停止渲染循环')
   }
   
@@ -298,6 +275,15 @@ onUnmounted(() => {
     } catch (err) {
       console.error('销毁渲染器时出错:', err)
     }
+  }
+  
+  // 清理控制器
+  if (controls) {
+    // 只有在dispose方法存在时才调用，避免SparkControls不存在该方法导致的错误
+    if (typeof controls.dispose === 'function') {
+      controls.dispose()
+    }
+    controls = null
   }
   
   // 清理引用
@@ -344,8 +330,8 @@ onUnmounted(() => {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #fff;
-  color: #000;
+  background-color: #000;
+  color: #fff;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -357,7 +343,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   flex: 1;
-  background: #fff;
+  background: #000;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -369,7 +355,7 @@ onUnmounted(() => {
   display: block;
   margin: 0;
   padding: 0;
-  background-color: #fff;
+  background-color: #000;
   box-sizing: border-box;
 }
 

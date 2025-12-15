@@ -6,14 +6,14 @@ import App from './App.vue'
 // 导入组件
 import PhotoReconstruction from './components/PhotoReconstruction.vue'
 import VideoPage from './components/VideoPage.vue'
-import Supersplat from './components/Spark.vue'
+import Spark from './components/Spark.vue'
 
 // 路由配置
 const routes = [
   { path: '/', redirect: '/photo-reconstruction' },
   { path: '/photo-reconstruction', component: PhotoReconstruction },
   { path: '/video', component: VideoPage },
-  { path: '/supersplat', component: Supersplat }
+  { path: '/spark', component: Spark }
 ]
 
 // 创建路由实例
@@ -22,9 +22,9 @@ const router = createRouter({
   routes
 })
 
-// 添加全局路由守卫，保护/supersplat路由
+// 添加全局路由守卫，保护/spark路由
 router.beforeEach((to, from, next) => {
-  if (to.path === '/supersplat') {
+  if (to.path === '/spark') {
     // 检查是否可以访问3D模型页面
     const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
     const currentPlyUrl = localStorage.getItem('currentPlyUrl')

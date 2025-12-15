@@ -110,6 +110,7 @@
 
 <script setup>
 import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Capacitor } from '@capacitor/core'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as THREE from 'three'
@@ -608,7 +609,22 @@ const getReconstructStatusColor = (status) => {
 }
 
 // 使用环境变量定义后端API地址
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://202.38.79.182:8000'
+
+// 检查是否在Capacitor应用中运行
+const isCapacitorApp = Capacitor.isNativePlatform()
+
+// 如果是在Capacitor应用中，确保API地址是完整的绝对URL
+// 如果是在开发环境中，使用代理后的路径
+const getApiUrl = (endpoint) => {
+  if (isCapacitorApp) {
+    // 在Capacitor应用中，直接使用完整的API地址
+    return `${apiBaseUrl}${endpoint}`
+  } else {
+    // 在浏览器中，使用相对路径，这样可以利用Vite的代理功能
+    return endpoint
+  }
+}
 
 // 通用的3D重建核心函数
 const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, onComplete) => {
@@ -680,9 +696,45 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     } else {
       // 处理本地文件路径（录制的视频）
       console.log('处理本地文件路径:', actualVideoUrl)
-      const response = await fetch(actualVideoUrl)
-      videoBlob = await response.blob()
-      console.log('本地文件读取成功，Blob大小:', videoBlob.size)
+      
+      // 检查是否是手机端的Capacitor文件路径
+      if (Capacitor.isNativePlatform() && actualVideoUrl.startsWith('capacitor://')) {
+        console.log('处理手机端Capacitor文件路径')
+        
+        // 提取实际的文件路径（去掉capacitor://localhost/_capacitor_file_/前缀）
+        let filePath = actualVideoUrl.replace('capacitor://localhost/_capacitor_file_/', '')
+        console.log('提取的实际文件路径:', filePath)
+        
+        // 使用Filesystem API读取视频文件
+        try {
+          const fileResult = await Filesystem.readFile({
+            path: filePath
+          })
+          
+          // 将base64内容转换为Blob
+          const base64Data = fileResult.data
+          const byteCharacters = atob(base64Data)
+          const byteNumbers = new Array(byteCharacters.length)
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i)
+          }
+          const byteArray = new Uint8Array(byteNumbers)
+          videoBlob = new Blob([byteArray], { type: 'video/mp4' })
+          console.log('Filesystem读取成功，Blob大小:', videoBlob.size)
+        } catch (fsError) {
+          console.error('使用Filesystem API读取视频失败:', fsError)
+          // 如果Filesystem API读取失败，尝试使用fetch作为备选方案
+          console.log('尝试使用fetch作为备选方案')
+          const response = await fetch(actualVideoUrl)
+          videoBlob = await response.blob()
+          console.log('fetch备选方案成功，Blob大小:', videoBlob.size)
+        }
+      } else {
+        // Web平台的本地文件路径或其他格式
+        const response = await fetch(actualVideoUrl)
+        videoBlob = await response.blob()
+        console.log('本地文件读取成功，Blob大小:', videoBlob.size)
+      }
       
       // 创建一个新的Blob URL
       const newBlobUrl = URL.createObjectURL(videoBlob)
@@ -706,13 +758,20 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     formData.append('video', videoBlob, 'video.mp4')
     
     // 3. 发送视频到后端进行3D重建
-    const response = await fetch(`${apiBaseUrl}/api/reconstruct`, {
-      method: 'POST',
-      body: formData
-    })
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('视频上传请求超时')), 30000); // 30秒超时
+    });
+    
+    const response = await Promise.race([
+      fetch(`${apiBaseUrl}/api/reconstruct`, {
+        method: 'POST',
+        body: formData
+      }),
+      timeoutPromise
+    ])
     
     if (!response.ok) {
-      throw new Error('视频上传失败')
+      throw new Error(`视频上传失败: ${response.status} ${response.statusText}`)
     }
     
     const result = await response.json()
@@ -724,7 +783,17 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     // 4. 开始轮询重建进度
     checkProgress(taskId, videoIndex, onProgressUpdate, onComplete)
   } catch (error) {
-    console.error('3D重建过程中发生错误:', error)
+    console.error('3D重建过程中发生错误:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      // 检查是否是网络错误
+      isNetworkError: error instanceof TypeError && (error.message.includes('failed to fetch') || error.message.includes('NetworkError')),
+      // 检查是否是CORS错误
+      isCORSError: error.message.includes('CORS'),
+      // 检查是否是超时错误
+      isTimeoutError: error.name === 'TimeoutError'
+    })
     throw error
   }
 }
@@ -732,7 +801,15 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
 // 独立的轮询进度检查函数，支持页面重启后恢复轮询
 const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) => {
   try {
-    const statusResponse = await fetch(`${apiBaseUrl}/api/task/${taskId}`)
+    // 添加请求超时处理
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('请求超时')), 10000); // 10秒超时
+    });
+    
+    const statusResponse = await Promise.race([
+      fetch(`${apiBaseUrl}/api/task/${taskId}`),
+      timeoutPromise
+    ])
     const statusData = await statusResponse.json()
     
     let taskStatus = statusData.status
@@ -762,7 +839,18 @@ const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) =
       throw new Error('3D重建失败')
     }
   } catch (error) {
-    console.error('轮询进度时发生错误:', error)
+    console.error('轮询进度时发生错误:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      // 检查是否是网络错误
+      isNetworkError: error instanceof TypeError && (error.message.includes('failed to fetch') || error.message.includes('NetworkError')),
+      // 检查是否是CORS错误
+      isCORSError: error.message.includes('CORS'),
+      // 检查是否是超时错误
+      isTimeoutError: error.name === 'TimeoutError',
+      taskId: taskId
+    })
     // 更新状态为错误
     updateReconstructStatus(videoIndex, 'error', 0, taskId)
   }

@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 const navItems = [
   { path: '/photo-reconstruction', label: '照片重建', icon: 'fa-camera' },
   { path: '/video', label: '视频', icon: 'fa-video' },
-  { path: '/supersplat', label: '3D模型', icon: 'fa-cube' }
+  { path: '/spark', label: '3D模型', icon: 'fa-cube' }
 ]
 
 // 获取路由信息
@@ -17,7 +17,7 @@ const router = useRouter()
 const activeNav = computed(() => route.path)
 
 // 检查是否可以跳转到3D模型页面
-const canNavigateToSupersplat = computed(() => {
+const canNavigateToSpark = computed(() => {
   // 获取选中的视频索引和当前PLY文件URL
   const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
   const currentPlyUrl = localStorage.getItem('currentPlyUrl')
@@ -55,7 +55,7 @@ onMounted(() => {
 <template>
   <div class="app">
     <!-- 主内容区域 -->
-    <div class="main-content" :class="{ 'full-height': route.path === '/supersplat' }">
+    <div class="main-content" :class="{ 'full-height': route.path === '/spark' }">
       <router-view />
     </div>
     
@@ -67,7 +67,7 @@ onMounted(() => {
         class="nav-item"
         :class="{ 
           active: activeNav === item.path, 
-          disabled: item.path === '/supersplat' && !canNavigateToSupersplat 
+          disabled: item.path === '/spark' && !canNavigateToSpark 
         }"
         @click="navigateTo(item.path)"
       >

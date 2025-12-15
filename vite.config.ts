@@ -7,12 +7,14 @@ export default defineConfig({
     vue()
   ],
   server: {
+    host: true, // 监听所有网络接口
+    port: 5173, // 确保端口与capacitor.config.json中配置的一致
     // 配置代理，将API请求转发到后端服务器
     proxy: {
       '/api': {
         target: 'http://202.38.79.182:8000', // 这里填写后端服务器的IP地址和端口
         changeOrigin: true, // 允许跨域
-        // rewrite: (path) => path.replace(/^\/api/, '') // 如果后端API没有/api前缀，可以使用这个配置去掉
+        // rewrite: (path) => path.replace(/^/api/, '') // 如果后端API没有/api前缀，可以使用这个配置去掉
       }
     }
   },
