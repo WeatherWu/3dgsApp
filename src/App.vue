@@ -97,12 +97,29 @@ onMounted(() => {
   /* 为移动设备状态栏留出空间 */
   padding-top: env(safe-area-inset-top);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.main-content.full-height {
+  height: 100%;
+}
+
+/* 修复移动端触摸滚动问题 */
+.main-content {
+  -webkit-overflow-scrolling: touch;
 }
 
 .main-content {
   width: 100%;
   height: calc(100vh - 80px - env(safe-area-inset-top));
-  overflow: hidden;
+  overflow: auto;
   padding: 0;
   margin: 0;
   box-sizing: border-box;

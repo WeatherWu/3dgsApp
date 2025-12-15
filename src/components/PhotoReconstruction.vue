@@ -400,7 +400,7 @@ const handleNativeFileUpload = async (file) => {
       const result = await Filesystem.writeFile({
         path: fileName,
         data: fileData,
-        directory: Directory.Documents
+        directory: Directory.Data
       });
       
       // 创建文件URL

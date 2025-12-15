@@ -55,15 +55,15 @@
                   <span class="status-text">{{ getReconstructStatusText(reconstructStatuses[index]?.status || 'not_started') }}</span>
                 </div>
                 
-                <div v-if="reconstructStatuses[index]?.status === 'processing'" class="progress-container">
-                  <div class="progress-bar">
-                    <div 
-                      class="progress-fill" 
-                      :style="{ width: reconstructStatuses[index]?.progress + '%' }"
-                    ></div>
-                  </div>
-                  <span class="progress-text">{{ reconstructStatuses[index]?.progress }}%</span>
+                <div v-if="reconstructStatuses[index]?.status === 'processing' || reconstructStatuses[index]?.status === 'downloading_ply'" class="progress-container">
+                <div class="progress-bar">
+                  <div 
+                    class="progress-fill" 
+                    :style="{ width: reconstructStatuses[index]?.progress + '%' }"
+                  ></div>
                 </div>
+                <span class="progress-text">{{ reconstructStatuses[index]?.progress }}%</span>
+              </div>
                 
                 <div v-if="reconstructStatuses[index]?.timestamp" class="status-timestamp">
                   <i class="fas fa-clock"></i>
@@ -302,11 +302,6 @@ const loadVideos = async () => {
           
           localStorage.setItem('photoReconstructionVideos', JSON.stringify(videosToStore))
           
-          // 为每个视频生成缩略图
-          videos.value.forEach((video, index) => {
-            generateThumbnail(typeof video === 'object' ? video.blobUrl : video, index)
-          })
-          
           // 从本地存储加载重建状态
           const savedStatuses = localStorage.getItem('reconstructStatuses')
           let statusesObj = {}
@@ -316,73 +311,74 @@ const loadVideos = async () => {
           
           // 为每个视频加载或初始化重建状态
           videos.value.forEach((_, index) => {
-            // 检查是否存在PLY文件URL，如果存在则标记为已完成
-            const plyUrl = localStorage.getItem(`plyUrl_${index}`)
-            if (plyUrl) {
-              updateReconstructStatus(index, 'completed', 100)
-            } else {
-              // 使用本地存储的状态或默认为未开始
-              const savedStatus = statusesObj[index]
-              if (savedStatus) {
-                updateReconstructStatus(index, savedStatus.status, savedStatus.progress, savedStatus.taskId)
+            // 优先使用本地存储的重建状态
+            const savedStatus = statusesObj[index]
+            if (savedStatus) {
+              updateReconstructStatus(index, savedStatus.status, savedStatus.progress, savedStatus.taskId)
+              
+              // 检查是否有正在处理的任务，如果有，恢复轮询
+              if (savedStatus.status === 'processing' && savedStatus.taskId) {
+                console.log(`发现正在处理的任务，视频索引: ${index}，任务ID: ${savedStatus.taskId}，当前进度: ${savedStatus.progress}%`)
                 
-                // 检查是否有正在处理的任务，如果有，恢复轮询
-                if (savedStatus.status === 'processing' && savedStatus.taskId) {
-                  console.log(`发现正在处理的任务，视频索引: ${index}，任务ID: ${savedStatus.taskId}，当前进度: ${savedStatus.progress}%`)
-                  
-                  // 恢复轮询
-                  checkProgress(
-                    savedStatus.taskId,
-                    index,
-                    (newProgress, taskId) => {
-                      updateReconstructStatus(index, 'processing', newProgress, taskId)
-                    },
-                    async (plyUrl) => {
-                      updateReconstructStatus(index, 'completed', 100, savedStatus.taskId)
+                // 恢复轮询
+                checkProgress(
+                  savedStatus.taskId,
+                  index,
+                  (newProgress, taskId) => {
+                    updateReconstructStatus(index, 'processing', newProgress, taskId)
+                  },
+                  async (plyUrl) => {
+                    updateReconstructStatus(index, 'completed', 100, savedStatus.taskId)
+                    
+                    // 下载PLY文件到本地
+                    try {
+                      const response = await fetch(plyUrl)
+                      const blob = await response.blob()
+                      const arrayBuffer = await blob.arrayBuffer()
                       
-                      // 下载PLY文件到本地
-                      try {
-                        const response = await fetch(plyUrl)
-                        const blob = await response.blob()
-                        const arrayBuffer = await blob.arrayBuffer()
-                        
-                        // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
-                        const uint8Array = new Uint8Array(arrayBuffer)
-                        let binaryString = ''
-                        for (let i = 0; i < uint8Array.length; i++) {
-                          binaryString += String.fromCharCode(uint8Array[i])
-                        }
-                        const base64Data = btoa(binaryString)
-                        
-                        // 保存到本地文件系统
-                        const fileName = `ply_${index}_${Date.now()}.ply`
-                        await Filesystem.writeFile({
-                          path: fileName,
-                          data: base64Data,
-                          directory: Directory.Data,
-                          recursive: true
-                        })
-                        
-                        // 保存本地文件路径到localStorage
-                        localStorage.setItem(`plyUrl_${index}`, fileName)
-                        localStorage.setItem('currentPlyUrl', fileName)
-                        
-                        // 同时更新选中的视频索引
-                        localStorage.setItem('selectedVideoIndex', index)
-                        selectedVideoIndex.value = index
-                        
-                        console.log('PLY文件已下载并保存到本地:', fileName)
-                      } catch (downloadError) {
-                        console.error('下载PLY文件失败:', downloadError)
-                        // 只使用本地文件，下载失败时不保存远程URL
-                        alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
-                        // 重置重建状态
-                        resetReconstructStatus(index)
+                      // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
+                      const uint8Array = new Uint8Array(arrayBuffer)
+                      let binaryString = ''
+                      for (let i = 0; i < uint8Array.length; i++) {
+                        binaryString += String.fromCharCode(uint8Array[i])
                       }
+                      const base64Data = btoa(binaryString)
+                      
+                      // 保存到本地文件系统
+                      const fileName = `ply_${index}_${Date.now()}.ply`
+                      await Filesystem.writeFile({
+                        path: fileName,
+                        data: base64Data,
+                        directory: Directory.Data,
+                        recursive: true
+                      })
+                      
+                      // 保存本地文件路径到localStorage
+                      localStorage.setItem(`plyUrl_${index}`, fileName)
+                      localStorage.setItem('currentPlyUrl', fileName)
+                      
+                      // 同时更新选中的视频索引
+                      localStorage.setItem('selectedVideoIndex', index)
+                      selectedVideoIndex.value = index
+                      
+                      console.log('PLY文件已下载并保存到本地:', fileName)
+                    } catch (downloadError) {
+                      console.error('下载PLY文件失败:', downloadError)
+                      // 只使用本地文件，下载失败时不保存远程URL
+                      alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
+                      // 重置重建状态
+                      resetReconstructStatus(index)
                     }
-                  )
-                }
+                  }
+                )
+              }
+            } else {
+              // 如果没有保存的状态，再检查PLY文件URL作为辅助判断
+              const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+              if (plyUrl) {
+                updateReconstructStatus(index, 'completed', 100)
               } else {
+                // 默认状态为未开始
                 updateReconstructStatus(index, 'not_started', 0)
               }
             }
@@ -411,6 +407,9 @@ const loadVideos = async () => {
               localStorage.setItem('currentPlyUrl', plyUrl || '')
             }
           }
+          
+          // 初始化懒加载观察器
+          initLazyLoading()
         }
         
         // 启动视频处理并等待完成
@@ -427,39 +426,122 @@ const loadVideos = async () => {
   }
 }
 
-// 生成视频缩略图
-const generateThumbnail = (videoUrl, index) => {
-  const video = document.createElement('video')
-  video.src = videoUrl
-  video.currentTime = 1 // 获取第1秒的画面作为封面
+// 懒加载观察器
+let observer = null
+
+// 初始化懒加载功能
+const initLazyLoading = () => {
+  // 如果浏览器不支持IntersectionObserver API，直接为所有视频生成缩略图
+  if (!('IntersectionObserver' in window)) {
+    videos.value.forEach((video, index) => {
+      generateThumbnail(typeof video === 'object' ? video.blobUrl : video, index)
+    })
+    return
+  }
   
-  video.addEventListener('loadeddata', () => {
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    
-    // 设置canvas尺寸
-    canvas.width = 320
-    canvas.height = 180
-    
-    // 绘制视频帧到canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    
-    // 将canvas转换为base64图片
-    const thumbnailUrl = canvas.toDataURL('image/jpeg')
-    
-    // 更新缩略图
-    videoThumbnails.value = {
-      ...videoThumbnails.value,
-      [index]: thumbnailUrl
+  // 配置观察器选项
+  const options = {
+    root: null, // 使用视口作为根元素
+    rootMargin: '0px', // 没有边距
+    threshold: 0.1 // 当视频的10%进入视口时触发
+  }
+  
+  // 创建观察器
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        // 获取视频索引
+        const index = parseInt(entry.target.dataset.videoIndex)
+        if (!isNaN(index) && index >= 0 && index < videos.value.length) {
+          // 生成缩略图
+          const video = videos.value[index]
+          generateThumbnail(typeof video === 'object' ? video.blobUrl : video, index)
+          // 停止观察这个视频
+          observer.unobserve(entry.target)
+        }
+      }
+    })
+  }, options)
+  
+  // 延迟观察视频元素，确保DOM已经渲染完成
+  setTimeout(() => {
+    // 观察所有视频元素
+    const videoItems = document.querySelectorAll('.video-item')
+    videoItems.forEach((item, index) => {
+      // 设置数据属性存储索引
+      item.dataset.videoIndex = index
+      // 开始观察
+      observer.observe(item)
+    })
+  }, 100)
+}
+
+// 组件卸载时清理观察器
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect()
+  }
+  
+  // 释放所有Blob URL资源
+  videos.value.forEach(videoItem => {
+    // 提取实际的视频URL，处理对象和字符串两种情况
+    const actualUrl = typeof videoItem === 'object' ? videoItem.blobUrl : videoItem;
+    if (actualUrl && typeof actualUrl === 'string' && actualUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(actualUrl)
+      console.log('已释放Blob URL资源:', actualUrl)
     }
   })
-  
-  video.addEventListener('error', () => {
-    // 如果生成缩略图失败，使用默认图标
-    videoThumbnails.value = {
-      ...videoThumbnails.value,
-      [index]: null
-    }
+})
+
+// 生成视频缩略图 - 优化版本
+const generateThumbnail = (videoUrl, index) => {
+  // 使用requestAnimationFrame确保在浏览器空闲时执行，避免阻塞主线程
+  requestAnimationFrame(() => {
+    const video = document.createElement('video')
+    // 设置视频加载优先级为低，避免影响主内容加载
+    video.loading = 'lazy'
+    video.src = videoUrl
+    // 使用更安全的方式获取视频帧，避免视频过短导致的错误
+    video.currentTime = Math.min(1, video.duration || 1)
+    
+    video.addEventListener('loadeddata', () => {
+      // 使用setTimeout将canvas绘制放在下一个事件循环，进一步避免阻塞
+      setTimeout(() => {
+        try {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          
+          // 适当降低缩略图分辨率，减少绘制时间和内存占用
+          canvas.width = 240
+          canvas.height = 135
+          
+          // 绘制视频帧到canvas
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          
+          // 使用更低的质量参数，减少数据量
+          const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7)
+          
+          // 批量更新缩略图，减少Vue响应式系统的触发次数
+          if (!videoThumbnails.value) videoThumbnails.value = {}
+          videoThumbnails.value[index] = thumbnailUrl
+          
+          // 释放资源
+          video.remove()
+        } catch (error) {
+          console.error('生成缩略图失败:', error)
+          // 如果生成缩略图失败，使用默认图标
+          if (!videoThumbnails.value) videoThumbnails.value = {}
+          videoThumbnails.value[index] = null
+        }
+      }, 0)
+    })
+    
+    video.addEventListener('error', () => {
+      console.error('视频加载失败:', video.error)
+      // 如果生成缩略图失败，使用默认图标
+      if (!videoThumbnails.value) videoThumbnails.value = {}
+      videoThumbnails.value[index] = null
+    })
   })
 }
 
@@ -475,17 +557,7 @@ const closeVideoPlayer = () => {
   currentVideo.value = ''
 }
 
-// 在组件卸载时释放所有Blob URL资源
-onUnmounted(() => {
-  videos.value.forEach(videoItem => {
-    // 提取实际的视频URL，处理对象和字符串两种情况
-    const actualUrl = typeof videoItem === 'object' ? videoItem.blobUrl : videoItem;
-    if (actualUrl && typeof actualUrl === 'string' && actualUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(actualUrl)
-      console.log('已释放Blob URL资源:', actualUrl)
-    }
-  })
-})
+// 移除重复的onUnmounted钩子，保留第一个完整的清理逻辑
 
 // 在组件挂载时加载视频
 onMounted(() => {
@@ -523,6 +595,7 @@ const getReconstructStatusText = (status) => {
   const statusMap = {
     'not_started': '未开始重建',
     'processing': '重建中',
+    'downloading_ply': '下载PLY文件中',
     'completed': '重建完成',
     'error': '重建失败'
   }
@@ -534,6 +607,7 @@ const getReconstructStatusColor = (status) => {
   const colorMap = {
     'not_started': '#666',
     'processing': '#1890ff',
+    'downloading_ply': '#1890ff', // 与重建中使用相同的蓝色
     'completed': '#52c41a',
     'error': '#ff4d4f'
   }
@@ -546,6 +620,7 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 // 通用的3D重建核心函数
 const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, onComplete) => {
   try {
+    
     // 1. 从视频URL获取视频文件
     console.log('处理视频URL:', videoUrl)
     let videoBlob;
@@ -670,11 +745,10 @@ const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) =
     let taskStatus = statusData.status
     const progress = statusData.progress || 0
     
-    // 调用进度更新回调，同时保存taskId
-    onProgressUpdate(progress, taskId)
-    
-    // 如果任务未完成，继续轮询
+    // 如果任务未完成，更新进度并继续轮询
     if (taskStatus !== 'completed' && taskStatus !== 'failed') {
+      // 调用进度更新回调，同时保存taskId
+      onProgressUpdate(progress, taskId)
       setTimeout(() => checkProgress(taskId, videoIndex, onProgressUpdate, onComplete), 1000)
     } else if (taskStatus === 'completed') {
       // 任务完成，获取PLY文件URL
@@ -706,6 +780,30 @@ const startReconstruction = async (videoIndex) => {
   if (!videos.value[videoIndex]) return
   
   try {
+    // 第二次按下重建按钮时，删除原有的PLY文件和路径数据
+    const oldPlyUrl = localStorage.getItem(`plyUrl_${videoIndex}`)
+    if (oldPlyUrl) {
+      // 删除本地存储的PLY文件路径
+      localStorage.removeItem(`plyUrl_${videoIndex}`)
+      
+      // 如果该视频是当前选中的视频，也删除currentPlyUrl
+      if (selectedVideoIndex.value === videoIndex) {
+        localStorage.removeItem('currentPlyUrl')
+      }
+      
+      // 尝试删除实际的PLY文件
+      try {
+        await Filesystem.deleteFile({
+          path: oldPlyUrl,
+          directory: Directory.Data
+        })
+        console.log('原有PLY文件已删除:', oldPlyUrl)
+      } catch (deleteError) {
+        console.error('删除原有PLY文件失败:', deleteError)
+        // 即使删除文件失败，仍继续进行新的重建
+      }
+    }
+    
     const videoUrl = videos.value[videoIndex]
     updateReconstructStatus(videoIndex, 'processing', 0)
     
@@ -716,47 +814,8 @@ const startReconstruction = async (videoIndex) => {
         updateReconstructStatus(videoIndex, 'processing', newProgress, taskId)
       },
       async (plyUrl) => {
-        updateReconstructStatus(videoIndex, 'completed', 100)
-        
-        // 下载PLY文件到本地
-        try {
-          const response = await fetch(plyUrl)
-          const blob = await response.blob()
-          const arrayBuffer = await blob.arrayBuffer()
-          
-          // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
-          const uint8Array = new Uint8Array(arrayBuffer)
-          let binaryString = ''
-          for (let i = 0; i < uint8Array.length; i++) {
-            binaryString += String.fromCharCode(uint8Array[i])
-          }
-          const base64Data = btoa(binaryString)
-          
-          // 保存到本地文件系统
-          const fileName = `ply_${videoIndex}_${Date.now()}.ply`
-          await Filesystem.writeFile({
-            path: fileName,
-            data: base64Data,
-            directory: Directory.Data,
-            recursive: true
-          })
-          
-          // 保存本地文件路径到localStorage
-          localStorage.setItem(`plyUrl_${videoIndex}`, fileName)
-          localStorage.setItem('currentPlyUrl', fileName)
-          
-          // 同时更新选中的视频索引
-          localStorage.setItem('selectedVideoIndex', videoIndex)
-          selectedVideoIndex.value = videoIndex
-          
-          console.log('PLY文件已下载并保存到本地:', fileName)
-        } catch (downloadError) {
-          console.error('下载PLY文件失败:', downloadError)
-          // 只使用本地文件，下载失败时不保存远程URL
-          alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
-          // 重置重建状态
-          resetReconstructStatus(videoIndex)
-        }
+        // 调用统一的下载函数（已整合重试逻辑）
+        await downloadPlyFile(plyUrl, videoIndex)
       }
     )
   } catch (error) {
@@ -779,6 +838,90 @@ const resetReconstructStatus = (videoIndex) => {
     localStorage.removeItem('currentPlyUrl')
   }
 }
+
+// 统一下载PLY文件函数
+const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
+  // 检查是否已经有对应的PLY文件，避免重复下载
+  const existingPlyUrl = localStorage.getItem(`plyUrl_${videoIndex}`)
+  if (existingPlyUrl) {
+    console.log('该视频已存在PLY文件，无需重复下载:', existingPlyUrl)
+    updateReconstructStatus(videoIndex, 'completed', 100)
+    return
+  }
+  
+  // 检查是否正在处理或下载中
+  const currentStatus = reconstructStatuses.value[videoIndex]?.status
+  if (currentStatus === 'downloading_ply' || currentStatus === 'processing') {
+    console.log('该视频正在处理或下载中，无需重复操作')
+    return
+  }
+  
+  let attempt = 0;
+  const maxAttempts = 2;
+  
+  while (attempt < maxAttempts) {
+    try {
+      attempt++;
+      
+      // 更新下载状态
+      updateReconstructStatus(videoIndex, 'downloading_ply', progress)
+      
+      // 下载PLY文件
+      const response = await fetch(plyUrl)
+      const blob = await response.blob()
+      const arrayBuffer = await blob.arrayBuffer()
+      
+      // 转换为base64
+      const uint8Array = new Uint8Array(arrayBuffer)
+      let binaryString = ''
+      for (let i = 0; i < uint8Array.length; i++) {
+        binaryString += String.fromCharCode(uint8Array[i])
+      }
+      const base64Data = btoa(binaryString)
+      
+      // 保存到本地文件系统 - 使用固定文件名实现文件覆盖，避免重复下载
+      const fileName = `ply_${videoIndex}.ply`
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Data,
+        recursive: true
+      })
+      
+      // 下载完成后更新状态
+      updateReconstructStatus(videoIndex, 'completed', 100)
+      
+      // 保存本地文件路径到localStorage
+      localStorage.setItem(`plyUrl_${videoIndex}`, fileName)
+      localStorage.setItem('currentPlyUrl', fileName)
+      
+      // 更新选中的视频索引
+      localStorage.setItem('selectedVideoIndex', videoIndex)
+      selectedVideoIndex.value = videoIndex
+      
+      console.log('PLY文件下载成功:', fileName)
+      return; // 下载成功，退出函数
+      
+    } catch (error) {
+      console.error(`第${attempt}次下载PLY文件失败:`, error)
+      
+      // 如果是最后一次尝试，更新状态为错误
+      if (attempt === maxAttempts) {
+        console.error('PLY文件下载失败，已达到最大尝试次数')
+        updateReconstructStatus(videoIndex, 'error', progress)
+        throw error; // 抛出错误给调用者处理
+      }
+      
+      // 等待一段时间后重试
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // 增加进度值表示重试
+      progress = 95;
+    }
+  }
+}
+
+
 
 // 加载默认PLY文件
 const loadDefaultPly = () => {
@@ -815,15 +958,7 @@ onMounted(async () => {
       // 更新currentPlyUrl为选中视频的PLY文件URL
       let plyUrl = localStorage.getItem(`plyUrl_${index}`)
       // 确保PLY文件URL是完整的绝对URL，只处理根相对路径
-      if (plyUrl && plyUrl !== '' && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
-        if (plyUrl.startsWith('/')) {
-          // 如果是根相对路径，直接拼接
-          plyUrl = apiBaseUrl + plyUrl
-          // 更新localStorage中的URL
-          localStorage.setItem(`plyUrl_${index}`, plyUrl)
-        }
-        // 本地文件路径（不以/开头）不做处理，保持原样
-      }
+      // 本地文件路径（不以/开头）不做处理，保持原样
       localStorage.setItem('currentPlyUrl', plyUrl || '')
     } else {
       // 索引无效时重置
@@ -985,9 +1120,7 @@ const goToHome = () => {
   router.push('/')
 }
 
-onUnmounted(() => {
-  // 组件卸载时的清理工作
-})
+// 移除重复的空onUnmounted钩子
 </script>
 
 <style scoped>
@@ -995,11 +1128,16 @@ onUnmounted(() => {
 
 /* 视频页面容器样式 - 实现滚动功能 */
 .video-page-container {
-  max-height: calc(100vh - 120px);
+  height: 100%;
   overflow-y: auto;
   padding: 20px 0;
   scroll-behavior: smooth;
   min-height: 0;
+  /* 启用GPU加速，优化滚动性能 */
+  will-change: scroll-position;
+  transform: translateZ(0);
+  /* 减少滚动时的重绘 */
+  contain: layout paint;
 }
 
 /* 自定义滚动条样式 */
