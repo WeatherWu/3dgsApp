@@ -1019,6 +1019,10 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
       selectedVideoIndex.value = videoIndex
       
       console.log('PLY文件下载成功:', fileName)
+      
+      // PLY文件下载完成后，获取推荐的场景中心和相机参数
+      await fetchRecommendedParams(videoIndex)
+      
       return; // 下载成功，退出函数
       
     } catch (error) {
@@ -1041,6 +1045,133 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
     }
   }
 }
+
+
+
+
+
+
+
+// 获取推荐的场景中心和相机参数
+const fetchRecommendedParams = async (videoIndex) => {
+  // 默认参数（与Spark页面中的相机参数一致）
+  const defaultParams = {
+    sceneCenter: [0, 0, 0],
+    cameraPosition: [0, 0, 1],
+    cameraTarget: [0, 0, 0],
+    fov: 75,
+    // 相机控制参数（与Spark页面一致）
+    minDistance: 0.1,
+    maxDistance: 10,
+    enableDamping: true,
+    dampingFactor: 0.05,
+    // 相机旋转范围
+    minPolarAngle: 0,
+    maxPolarAngle: Math.PI,
+    minAzimuthAngle: -Infinity,
+    maxAzimuthAngle: Infinity
+  }
+  
+  // 从localStorage获取任务ID
+  const savedStatuses = localStorage.getItem('reconstructStatuses')
+  if (!savedStatuses) {
+    console.error('未找到重建状态信息')
+    // 保存默认参数
+    localStorage.setItem(`recommendedParams_${videoIndex}`, JSON.stringify(defaultParams))
+    return
+  }
+  
+  const statusesObj = JSON.parse(savedStatuses)
+  const status = statusesObj[videoIndex]
+  
+  if (!status || !status.taskId) {
+    console.error('未找到任务ID')
+    // 保存默认参数
+    localStorage.setItem(`recommendedParams_${videoIndex}`, JSON.stringify(defaultParams))
+    return
+  }
+  
+  const taskId = status.taskId
+  const maxAttempts = 2 // 最多尝试2次（初始请求 + 1次重试）
+  let attempt = 0
+  
+  while (attempt < maxAttempts) {
+    try {
+      attempt++
+      
+      console.log(`第${attempt}次尝试获取推荐参数，视频索引: ${videoIndex}，任务ID: ${taskId}`)
+      
+      // 构建API URL
+      const apiUrl = getApiUrl(`/api/task/${taskId}/recommended-params`)
+      
+      // 添加请求超时处理
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('请求超时')), 10000); // 10秒超时
+      });
+      
+      // 发送请求
+      const response = await Promise.race([
+        fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }),
+        timeoutPromise
+      ])
+      
+      // 检查响应状态
+      if (!response.ok) {
+        throw new Error(`获取推荐参数失败，HTTP状态码: ${response.status}`)
+      }
+      
+      // 解析响应数据
+      const params = await response.json()
+      
+      // 验证参数有效性
+      if (params && Array.isArray(params.sceneCenter) && params.sceneCenter.length === 3) {
+        console.log('成功获取推荐参数:', params)
+        
+        // 持久化存储参数
+        localStorage.setItem(`recommendedParams_${videoIndex}`, JSON.stringify(params))
+        
+        // 如果是当前选中的视频，也保存到currentRecommendedParams
+        if (selectedVideoIndex.value === videoIndex) {
+          localStorage.setItem('currentRecommendedParams', JSON.stringify(params))
+        }
+        
+        return params
+      } else {
+        throw new Error('获取的推荐参数格式无效')
+      }
+      
+    } catch (error) {
+      console.error(`第${attempt}次获取推荐参数失败:`, error)
+      
+      // 如果是最后一次尝试，使用默认参数
+      if (attempt === maxAttempts) {
+        console.log('获取推荐参数失败，使用默认参数:', defaultParams)
+        
+        // 保存默认参数
+        localStorage.setItem(`recommendedParams_${videoIndex}`, JSON.stringify(defaultParams))
+        
+        // 如果是当前选中的视频，也保存到currentRecommendedParams
+        if (selectedVideoIndex.value === videoIndex) {
+          localStorage.setItem('currentRecommendedParams', JSON.stringify(defaultParams))
+        }
+        
+        return defaultParams
+      }
+      
+      // 请求失败后5秒重发一次
+      const retryDelay = 5000; // 5秒重试一次
+      console.log(`请求失败，${retryDelay}毫秒后进行第${attempt + 1}次尝试`)
+      await new Promise(resolve => setTimeout(resolve, retryDelay))
+    }
+  }
+}
+
+
 
 
 

@@ -148,6 +148,41 @@ const loadModel = async (url) => {
   }
 }
 
+// 加载推荐参数
+const loadRecommendedParams = () => {
+  // 获取当前选中的视频索引
+  const selectedVideoIndex = localStorage.getItem('selectedVideoIndex')
+  let recommendedParams = null
+  
+  if (selectedVideoIndex) {
+    // 尝试从localStorage获取该视频的推荐参数
+    const paramsJson = localStorage.getItem(`recommendedParams_${selectedVideoIndex}`)
+    if (paramsJson) {
+      try {
+        recommendedParams = JSON.parse(paramsJson)
+        console.log('成功加载推荐参数:', recommendedParams)
+      } catch (parseError) {
+        console.error('解析推荐参数失败:', parseError)
+      }
+    }
+  }
+  
+  if (!recommendedParams) {
+    // 尝试获取当前推荐参数
+    const currentParamsJson = localStorage.getItem('currentRecommendedParams')
+    if (currentParamsJson) {
+      try {
+        recommendedParams = JSON.parse(currentParamsJson)
+        console.log('成功加载当前推荐参数:', recommendedParams)
+      } catch (parseError) {
+        console.error('解析当前推荐参数失败:', parseError)
+      }
+    }
+  }
+  
+  return recommendedParams
+}
+
 // 初始化Three.js应用
 const initThreeJsApp = async (modelUrl = splatUrl.value) => {
   try {
@@ -163,9 +198,19 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
     scene = new THREE.Scene()
     scene.background = new THREE.Color(0x000000)
     
+    // 加载推荐参数
+    const recommendedParams = loadRecommendedParams()
+    
     // 创建相机
-    camera = new THREE.PerspectiveCamera(75, 1, 0.01, 1000) // 初始宽高比为1，将在resize时更新
-    camera.position.set(0, 0, 1)
+    const fov = recommendedParams?.fov || 75
+    camera = new THREE.PerspectiveCamera(fov, 1, 0.01, 1000) // 初始宽高比为1，将在resize时更新
+    
+    // 设置相机位置
+    if (recommendedParams?.cameraPosition) {
+      camera.position.set(...recommendedParams.cameraPosition)
+    } else {
+      camera.position.set(0, 0, 1)
+    }
     
     // 创建渲染器，配置高质量渲染参数
     renderer = new THREE.WebGLRenderer({ 
@@ -196,11 +241,25 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
     
     // 初始化OrbitControls（围绕场景中心旋转）
     controls = new OrbitControls(camera, canvasRef.value)
-    controls.target.set(0, 0, 0) // 设置旋转中心为场景原点
-    controls.enableDamping = true // 启用阻尼效果
-    controls.dampingFactor = 0.05 // 阻尼系数
-    controls.minDistance = 0.1 // 最小距离
-    controls.maxDistance = 10 // 最大距离
+    
+    // 设置相机目标
+    if (recommendedParams?.cameraTarget) {
+      controls.target.set(...recommendedParams.cameraTarget)
+    } else {
+      controls.target.set(0, 0, 0)
+    }
+    
+    // 应用相机控制参数
+    controls.enableDamping = recommendedParams?.enableDamping !== undefined ? recommendedParams.enableDamping : true
+    controls.dampingFactor = recommendedParams?.dampingFactor !== undefined ? recommendedParams.dampingFactor : 0.05
+    controls.minDistance = recommendedParams?.minDistance !== undefined ? recommendedParams.minDistance : 0.1
+    controls.maxDistance = recommendedParams?.maxDistance !== undefined ? recommendedParams.maxDistance : 10
+    
+    // 应用相机旋转范围
+    controls.minPolarAngle = recommendedParams?.minPolarAngle !== undefined ? recommendedParams.minPolarAngle : 0
+    controls.maxPolarAngle = recommendedParams?.maxPolarAngle !== undefined ? recommendedParams.maxPolarAngle : Math.PI
+    controls.minAzimuthAngle = recommendedParams?.minAzimuthAngle !== undefined ? recommendedParams.minAzimuthAngle : -Infinity
+    controls.maxAzimuthAngle = recommendedParams?.maxAzimuthAngle !== undefined ? recommendedParams.maxAzimuthAngle : Infinity
     
     // 分辨率缩放因子 - 可以根据设备性能调整
     // 值为1时使用标准DPR，值大于1时提高分辨率（如1.5或2.0）
