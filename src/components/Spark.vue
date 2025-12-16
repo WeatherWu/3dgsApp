@@ -167,17 +167,32 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
     camera = new THREE.PerspectiveCamera(75, 1, 0.01, 1000) // 初始宽高比为1，将在resize时更新
     camera.position.set(0, 0, 1)
     
-    // 创建渲染器
+    // 创建渲染器，配置高质量渲染参数
     renderer = new THREE.WebGLRenderer({ 
       canvas: canvasRef.value,
-      antialias: true,
-      alpha: false
+      antialias: true,           // 启用抗锯齿
+      alpha: false,
+      precision: 'highp',       // 使用高精度
+      powerPreference: 'high-performance' // 优先使用高性能GPU
     })
     
-    // 设置渲染器尺寸
-    const width = containerRef.value.clientWidth
-    const height = containerRef.value.clientHeight
+    // 设置设备像素比和初始尺寸
+    const dpr = window.devicePixelRatio || 1
+    const container = containerRef.value
+    const width = container.clientWidth
+    const height = container.clientHeight
+    
+    // 初始化时就设置正确的像素比和尺寸
+    renderer.setPixelRatio(dpr)
     renderer.setSize(width, height, false)
+    
+    // 提高渲染质量的额外设置
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.0
+    
+    console.log('渲染器初始化完成，像素比:', dpr, '初始尺寸:', width, 'x', height)
     
     // 初始化OrbitControls（围绕场景中心旋转）
     controls = new OrbitControls(camera, canvasRef.value)
@@ -187,21 +202,35 @@ const initThreeJsApp = async (modelUrl = splatUrl.value) => {
     controls.minDistance = 0.1 // 最小距离
     controls.maxDistance = 10 // 最大距离
     
+    // 分辨率缩放因子 - 可以根据设备性能调整
+    // 值为1时使用标准DPR，值大于1时提高分辨率（如1.5或2.0）
+    // 注意：过高的值可能导致性能问题
+    const resolutionScale = 1.5
+    
     // 定义窗口大小变化处理函数
     handleResize = () => {
-      const width = containerRef.value.clientWidth
-      const height = containerRef.value.clientHeight
+      const container = containerRef.value
+      const width = container.clientWidth
+      const height = container.clientHeight
+      const dpr = window.devicePixelRatio || 1
+      const scaledDpr = dpr * resolutionScale
 
       // Only resize if necessary
       const canvas = renderer.domElement
-      const needResize = canvas.width !== width || canvas.height !== height
+      const needResize = canvas.width !== width * scaledDpr || canvas.height !== height * scaledDpr
 
       if (needResize) {
+        // 设置渲染器的像素比和尺寸
+        renderer.setPixelRatio(scaledDpr)
         renderer.setSize(width, height, false)
+        
+        // 更新相机的宽高比
         camera.aspect = width / height
         camera.updateProjectionMatrix()
         
         console.log('Three.js画布尺寸调整为:', width, 'x', height)
+        console.log('设备像素比:', dpr, '分辨率缩放:', resolutionScale, '实际使用DPR:', scaledDpr)
+        console.log('实际Canvas像素尺寸:', width * scaledDpr, 'x', height * scaledDpr)
       }
     }
     

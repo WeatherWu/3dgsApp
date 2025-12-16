@@ -109,10 +109,10 @@
 </template>
 
 <script setup>
-import { Filesystem, Directory } from '@capacitor/filesystem'
-import { Capacitor } from '@capacitor/core'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
+import { ref, onMounted, onUnmounted, onActivated, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import * as THREE from 'three'
 
 const router = useRouter()
@@ -124,6 +124,9 @@ const currentVideo = ref('')
 
 // 重建状态管理
 const reconstructStatuses = ref({})
+
+// 轮询状态跟踪，防止重复启动轮询
+const pollingTimers = ref({})
 
 // 选中的视频索引
 const selectedVideoIndex = ref(null)
@@ -302,81 +305,51 @@ const loadVideos = async () => {
           if (savedStatuses) {
             statusesObj = JSON.parse(savedStatuses)
           }
-          
-          // 为每个视频加载或初始化重建状态
-          videos.value.forEach((_, index) => {
-            // 优先使用本地存储的重建状态
-            const savedStatus = statusesObj[index]
-            if (savedStatus) {
-              updateReconstructStatus(index, savedStatus.status, savedStatus.progress, savedStatus.taskId)
-              
-              // 检查是否有正在处理的任务，如果有，恢复轮询
-              if (savedStatus.status === 'processing' && savedStatus.taskId) {
-                console.log(`发现正在处理的任务，视频索引: ${index}，任务ID: ${savedStatus.taskId}，当前进度: ${savedStatus.progress}%`)
-                
-                // 恢复轮询
-                checkProgress(
-                  savedStatus.taskId,
-                  index,
-                  (newProgress, taskId) => {
-                    updateReconstructStatus(index, 'processing', newProgress, taskId)
-                  },
-                  async (plyUrl) => {
-                    updateReconstructStatus(index, 'completed', 100, savedStatus.taskId)
-                    
-                    // 下载PLY文件到本地
-                    try {
-                      const response = await fetch(plyUrl)
-                      const blob = await response.blob()
-                      const arrayBuffer = await blob.arrayBuffer()
-                      
-                      // 高效的ArrayBuffer转换为base64字符串的方法，避免大型文件导致的栈溢出
-                      const uint8Array = new Uint8Array(arrayBuffer)
-                      let binaryString = ''
-                      for (let i = 0; i < uint8Array.length; i++) {
-                        binaryString += String.fromCharCode(uint8Array[i])
-                      }
-                      const base64Data = btoa(binaryString)
-                      
-                      // 保存到本地文件系统
-                      const fileName = `ply_${index}_${Date.now()}.ply`
-                      await Filesystem.writeFile({
-                        path: fileName,
-                        data: base64Data,
-                        directory: Directory.Data,
-                        recursive: true
-                      })
-                      
-                      // 保存本地文件路径到localStorage
-                      localStorage.setItem(`plyUrl_${index}`, fileName)
-                      localStorage.setItem('currentPlyUrl', fileName)
-                      
-                      // 同时更新选中的视频索引
-                      localStorage.setItem('selectedVideoIndex', index)
-                      selectedVideoIndex.value = index
-                      
-                      console.log('PLY文件已下载并保存到本地:', fileName)
-                    } catch (downloadError) {
-                      console.error('下载PLY文件失败:', downloadError)
-                      // 只使用本地文件，下载失败时不保存远程URL
-                      alert('3D重建完成，但下载PLY文件失败，请重新尝试重建')
-                      // 重置重建状态
-                      resetReconstructStatus(index)
-                    }
-                  }
-                )
-              }
-            } else {
-              // 如果没有保存的状态，再检查PLY文件URL作为辅助判断
-              const plyUrl = localStorage.getItem(`plyUrl_${index}`)
-              if (plyUrl) {
-                updateReconstructStatus(index, 'completed', 100)
-              } else {
-                // 默认状态为未开始
-                updateReconstructStatus(index, 'not_started', 0)
-              }
+  
+  // 为每个视频加载或初始化重建状态
+  videos.value.forEach((_, index) => {
+    // 优先使用本地存储的重建状态
+    const savedStatus = statusesObj[index]
+    if (savedStatus) {
+      updateReconstructStatus(index, savedStatus.status, savedStatus.progress, savedStatus.taskId)
+      
+      // 检查是否有正在处理的任务，如果有，恢复轮询
+      if (savedStatus.status === 'processing' && savedStatus.taskId) {
+        console.log(`发现正在处理的任务，视频索引: ${index}，任务ID: ${savedStatus.taskId}，当前进度: ${savedStatus.progress}%`)
+        
+        // 恢复轮询，确保不会重复启动
+        if (!pollingTimers.value[index]) {
+          console.log(`启动轮询，视频索引: ${index}，任务ID: ${savedStatus.taskId}`)
+          checkProgress(
+            savedStatus.taskId,
+            index,
+            (newProgress, taskId) => {
+              updateReconstructStatus(index, 'processing', newProgress, taskId)
+            },
+            async (plyUrl) => {
+              // 调用统一下载函数，避免重复下载
+              await downloadPlyFile(plyUrl, index)
+              // 轮询完成后清除定时器标记
+              delete pollingTimers.value[index]
             }
-          })
+          )
+          // 标记该视频已经启动了轮询
+          pollingTimers.value[index] = true
+        } else {
+          console.log(`视频索引: ${index} 已经有轮询在运行，跳过重复启动`)
+        }
+      }
+    } else {
+      // 如果没有保存的状态，再检查PLY文件URL作为辅助判断
+      const plyUrl = localStorage.getItem(`plyUrl_${index}`)
+      if (plyUrl) {
+        updateReconstructStatus(index, 'completed', 100)
+      } else {
+        // 默认状态为未开始
+        updateReconstructStatus(index, 'not_started', 0)
+      }
+    }
+  })
           
           // 检查是否需要处理路由参数（自动重建）
           if (route.query.autoReconstruct === 'true') {
@@ -591,7 +564,8 @@ const getReconstructStatusText = (status) => {
     'processing': '重建中',
     'downloading_ply': '下载PLY文件中',
     'completed': '重建完成',
-    'error': '重建失败'
+    'error': '重建失败',
+    'timeout_error': '连接超时失败'
   }
   return statusMap[status] || '未知状态'
 }
@@ -603,7 +577,8 @@ const getReconstructStatusColor = (status) => {
     'processing': '#1890ff',
     'downloading_ply': '#1890ff', // 与重建中使用相同的蓝色
     'completed': '#52c41a',
-    'error': '#ff4d4f'
+    'error': '#ff4d4f',
+    'timeout_error': '#ff4d4f' // 与错误状态使用相同的红色
   }
   return colorMap[status] || '#666'
 }
@@ -614,16 +589,9 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://202.38.79.182:80
 // 检查是否在Capacitor应用中运行
 const isCapacitorApp = Capacitor.isNativePlatform()
 
-// 如果是在Capacitor应用中，确保API地址是完整的绝对URL
-// 如果是在开发环境中，使用代理后的路径
+// 始终返回完整的API URL，避免代理问题
 const getApiUrl = (endpoint) => {
-  if (isCapacitorApp) {
-    // 在Capacitor应用中，直接使用完整的API地址
-    return `${apiBaseUrl}${endpoint}`
-  } else {
-    // 在浏览器中，使用相对路径，这样可以利用Vite的代理功能
-    return endpoint
-  }
+  return `${apiBaseUrl}${endpoint}`
 }
 
 // 通用的3D重建核心函数
@@ -763,7 +731,7 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     });
     
     const response = await Promise.race([
-      fetch(`${apiBaseUrl}/api/reconstruct`, {
+      fetch(`${getApiUrl('/api/reconstruct')}`, {
         method: 'POST',
         body: formData
       }),
@@ -780,8 +748,19 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
     // 更新重建状态，保存taskId
     onProgressUpdate(0, taskId)
     
-    // 4. 开始轮询重建进度
-    checkProgress(taskId, videoIndex, onProgressUpdate, onComplete)
+    // 4. 开始轮询重建进度，确保不会重复启动
+    if (!pollingTimers.value[videoIndex]) {
+      console.log(`开始新的轮询任务，视频索引: ${videoIndex}，任务ID: ${taskId}`)
+      checkProgress(taskId, videoIndex, onProgressUpdate, (plyUrl) => {
+        onComplete(plyUrl)
+        // 轮询完成后清除定时器标记
+        delete pollingTimers.value[videoIndex]
+      })
+      // 标记该视频已经启动了轮询
+      pollingTimers.value[videoIndex] = true
+    } else {
+      console.log(`视频索引: ${videoIndex} 已经有轮询在运行，跳过重复启动`)
+    }
   } catch (error) {
     console.error('3D重建过程中发生错误:', {
       message: error.message,
@@ -799,15 +778,15 @@ const perform3DReconstruction = async (videoUrl, videoIndex, onProgressUpdate, o
 }
 
 // 独立的轮询进度检查函数，支持页面重启后恢复轮询
-const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) => {
+const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete, retryCount = 0) => {
   try {
     // 添加请求超时处理
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('请求超时')), 10000); // 10秒超时
+      setTimeout(() => reject(new Error('请求超时')), 15000); // 15秒超时，后台运行时延长
     });
     
     const statusResponse = await Promise.race([
-      fetch(`${apiBaseUrl}/api/task/${taskId}`),
+      fetch(getApiUrl(`/api/task/${taskId}`)),
       timeoutPromise
     ])
     const statusData = await statusResponse.json()
@@ -816,43 +795,78 @@ const checkProgress = async (taskId, videoIndex, onProgressUpdate, onComplete) =
     const progress = statusData.progress || 0
     
     // 如果任务未完成，更新进度并继续轮询
-    if (taskStatus !== 'completed' && taskStatus !== 'failed') {
-      // 调用进度更新回调，同时保存taskId
-      onProgressUpdate(progress, taskId)
-      setTimeout(() => checkProgress(taskId, videoIndex, onProgressUpdate, onComplete), 1000)
+      if (taskStatus !== 'completed' && taskStatus !== 'failed') {
+        // 调用进度更新回调，同时保存taskId
+        onProgressUpdate(progress, taskId)
+        
+        // 固定轮询间隔为5秒
+        const pollingInterval = 5000; // 5秒轮询一次
+        
+        // 使用setTimeout而不是setInterval，更安全
+        setTimeout(() => checkProgress(taskId, videoIndex, onProgressUpdate, onComplete), pollingInterval)
     } else if (taskStatus === 'completed') {
       // 任务完成，获取PLY文件URL
       let plyUrl = statusData.ply_url
+      
+      console.log('任务完成，获取到PLY文件URL:', plyUrl)
+      
       // 确保PLY文件URL是完整的绝对URL
       if (plyUrl && !plyUrl.startsWith('http://') && !plyUrl.startsWith('https://')) {
-        // 如果是相对路径，与apiBaseUrl结合
+        // 如果是相对路径，使用getApiUrl函数确保HTTPS连接
         if (plyUrl.startsWith('/')) {
-          // 如果是根相对路径，直接拼接
-          plyUrl = apiBaseUrl + plyUrl
+          // 如果是根相对路径，直接使用getApiUrl
+          plyUrl = getApiUrl(plyUrl)
         } else {
-          // 如果是相对路径，添加斜杠后拼接
-          plyUrl = apiBaseUrl + '/' + plyUrl
+          // 如果是相对路径，添加斜杠后使用getApiUrl
+          plyUrl = getApiUrl('/' + plyUrl)
         }
+        console.log('转换后的完整PLY文件URL:', plyUrl)
       }
+      
+      // 检查PLY文件URL是否有效
+      if (!plyUrl) {
+        console.error('任务完成但未获取到有效的PLY文件URL')
+        // 调用onComplete传递null，由调用者处理
+        onComplete(null)
+        return
+      }
+      
       onComplete(plyUrl)
     } else {
       throw new Error('3D重建失败')
     }
   } catch (error) {
+    const isNetworkError = error instanceof TypeError && (error.message.includes('failed to fetch') || error.message.includes('NetworkError'));
+    const isTimeoutError = error.name === 'TimeoutError';
+    
     console.error('轮询进度时发生错误:', {
       message: error.message,
       stack: error.stack,
       name: error.name,
       // 检查是否是网络错误
-      isNetworkError: error instanceof TypeError && (error.message.includes('failed to fetch') || error.message.includes('NetworkError')),
+      isNetworkError: isNetworkError,
       // 检查是否是CORS错误
       isCORSError: error.message.includes('CORS'),
       // 检查是否是超时错误
-      isTimeoutError: error.name === 'TimeoutError',
+      isTimeoutError: isTimeoutError,
+      retryCount: retryCount,
       taskId: taskId
     })
-    // 更新状态为错误
-    updateReconstructStatus(videoIndex, 'error', 0, taskId)
+    
+    // 网络错误或超时错误时，进行无限制重试
+    if (isNetworkError || isTimeoutError) {
+      // 重试间隔逐渐增加，但达到一定值后保持稳定
+      const retryInterval = Math.min(5000 * (retryCount + 1), 30000); // 最多30秒重试一次
+      console.log(`网络请求失败，${retryInterval}毫秒后重试 (第${retryCount + 1}次重试)`, taskId);
+      
+      // 重试
+      setTimeout(() => checkProgress(taskId, videoIndex, onProgressUpdate, onComplete, retryCount + 1), retryInterval);
+    } else {
+      // 其他错误，更新状态
+      console.error('轮询失败', taskId);
+      // 设置错误状态
+      updateReconstructStatus(videoIndex, 'error', 0, taskId);
+    }
   }
 }
 
@@ -922,23 +936,31 @@ const resetReconstructStatus = (videoIndex) => {
 
 // 统一下载PLY文件函数
 const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
-  // 检查是否已经有对应的PLY文件，避免重复下载
-  const existingPlyUrl = localStorage.getItem(`plyUrl_${videoIndex}`)
-  if (existingPlyUrl) {
-    console.log('该视频已存在PLY文件，无需重复下载:', existingPlyUrl)
-    updateReconstructStatus(videoIndex, 'completed', 100)
+  // 检查PLY URL是否有效
+  if (!plyUrl) {
+    console.error('下载PLY文件失败: PLY URL无效')
+    // 下载失败时，不重置状态，保持completed状态，让用户可以重新尝试下载
+    updateReconstructStatus(videoIndex, 'error', 100)
     return
   }
   
-  // 检查是否正在处理或下载中
-  const currentStatus = reconstructStatuses.value[videoIndex]?.status
-  if (currentStatus === 'downloading_ply' || currentStatus === 'processing') {
-    console.log('该视频正在处理或下载中，无需重复操作')
-    return
+  // 检查是否已经有对应的PLY文件，避免重复下载
+  // 注意：即使存在，也允许用户重新下载
+  const existingPlyUrl = localStorage.getItem(`plyUrl_${videoIndex}`)
+  if (existingPlyUrl) {
+    console.log('该视频已存在PLY文件，将重新下载:', existingPlyUrl)
+    // 不直接返回，继续下载以覆盖现有文件
+  }
+  
+  // 检查plyUrl是否有效
+  if (!plyUrl) {
+    console.error('下载PLY文件失败：无效的URL')
+    updateReconstructStatus(videoIndex, 'error', progress)
+    throw new Error('无效的PLY文件URL')
   }
   
   let attempt = 0;
-  const maxAttempts = 2;
+  const maxAttempts = 5; // 增加尝试次数
   
   while (attempt < maxAttempts) {
     try {
@@ -947,8 +969,24 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
       // 更新下载状态
       updateReconstructStatus(videoIndex, 'downloading_ply', progress)
       
+      console.log(`第${attempt}次尝试下载PLY文件:`, plyUrl)
+      
+      // 添加请求超时处理
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('下载超时')), 30000); // 30秒超时
+      });
+      
       // 下载PLY文件
-      const response = await fetch(plyUrl)
+      const response = await Promise.race([
+        fetch(plyUrl),
+        timeoutPromise
+      ])
+      
+      // 检查响应状态
+      if (!response.ok) {
+        throw new Error(`下载失败，HTTP状态码: ${response.status}`)
+      }
+      
       const blob = await response.blob()
       const arrayBuffer = await blob.arrayBuffer()
       
@@ -993,11 +1031,13 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
         throw error; // 抛出错误给调用者处理
       }
       
-      // 等待一段时间后重试
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // 等待一段时间后重试，固定间隔为5秒
+      const retryDelay = 5000; // 5秒重试一次
+      console.log(`下载失败，${retryDelay}毫秒后进行第${attempt + 1}次尝试`)
+      await new Promise(resolve => setTimeout(resolve, retryDelay))
       
       // 增加进度值表示重试
-      progress = 95;
+      progress = Math.min(90 + attempt * 2, 98); // 92%, 94%, 96%, 98%
     }
   }
 }
@@ -1005,6 +1045,60 @@ const downloadPlyFile = async (plyUrl, videoIndex, progress = 90) => {
 
 
 
+
+// 组件激活时恢复轮询（页面切换回来时）
+onActivated(() => {
+  console.log('VideoPage组件被激活，检查并恢复轮询任务...')
+  
+  // 从本地存储加载最新的重建状态
+  const savedStatuses = localStorage.getItem('reconstructStatuses')
+  if (savedStatuses) {
+    const statusesObj = JSON.parse(savedStatuses)
+    
+    // 检查每个视频的重建状态
+    Object.keys(statusesObj).forEach((videoIndexStr) => {
+      const videoIndex = parseInt(videoIndexStr)
+      const status = statusesObj[videoIndex]
+      
+      // 如果有正在处理的任务，恢复轮询
+      if (status && status.status === 'processing' && status.taskId) {
+        console.log(`恢复轮询任务，视频索引: ${videoIndex}，任务ID: ${status.taskId}，当前进度: ${status.progress}%`)
+        
+        // 恢复轮询，确保不会重复启动
+        if (!pollingTimers.value[videoIndex]) {
+          console.log(`启动轮询，视频索引: ${videoIndex}，任务ID: ${status.taskId}`)
+          checkProgress(
+            status.taskId,
+            videoIndex,
+            (newProgress, taskId) => {
+              updateReconstructStatus(videoIndex, 'processing', newProgress, taskId)
+            },
+            async (plyUrl) => {
+              updateReconstructStatus(videoIndex, 'completed', 100, status.taskId)
+              
+              // 下载PLY文件到本地
+              try {
+                await downloadPlyFile(plyUrl, videoIndex)
+              } catch (downloadError) {
+                console.error('下载PLY文件失败:', downloadError)
+                // 下载失败时不重置状态，保持completed状态，让用户可以重新尝试下载
+                alert('3D重建完成，但下载PLY文件失败，请重新尝试下载')
+                // 只更新状态为error，但保留taskId
+                updateReconstructStatus(videoIndex, 'error', 100, status.taskId)
+              }
+              // 轮询完成后清除定时器标记
+              delete pollingTimers.value[videoIndex]
+            }
+          )
+          // 标记该视频已经启动了轮询
+          pollingTimers.value[videoIndex] = true
+        } else {
+          console.log(`视频索引: ${videoIndex} 已经有轮询在运行，跳过重复启动`)
+        }
+      }
+    })
+  }
+})
 
 // 组件挂载时初始化所有视频重建状态
 onMounted(async () => {

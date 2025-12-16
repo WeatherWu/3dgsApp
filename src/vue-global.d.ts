@@ -1,14 +1,18 @@
 // @ts-nocheck
 export {};
+declare module 'vue' {
+	export interface GlobalComponents { }
+	export interface GlobalDirectives { }
+}
 declare global {
 	
 
 	const __VLS_directiveBindingRestFields: { instance: null, oldValue: null, modifiers: any, dir: any };
 	const __VLS_placeholder: any;
-	const __VLS_intrinsics: import('vue/jsx-runtime').JSX.IntrinsicElements;
+	const __VLS_intrinsics: globalThis.JSX.IntrinsicElements;
 
 	type __VLS_Elements = __VLS_SpreadMerge<SVGElementTagNameMap, HTMLElementTagNameMap>;
-	type __VLS_GlobalComponents = import('vue').GlobalComponents;
+	type __VLS_GlobalComponents = import('vue').GlobalComponents & Pick<typeof import('vue'), 'Transition' | 'TransitionGroup' | 'KeepAlive' | 'Suspense' | 'Teleport'>;
 	type __VLS_GlobalDirectives = import('vue').GlobalDirectives;
 	type __VLS_IsAny<T> = 0 extends 1 & T ? true : false;
 	type __VLS_PickNotAny<A, B> = __VLS_IsAny<A> extends true ? B : A;
@@ -30,7 +34,7 @@ declare global {
 		? K extends { __ctx?: { props?: infer P } } ? NonNullable<P> : never
 		: T extends (props: infer P, ...args: any) => any ? P
 		: {};
-	type __VLS_FunctionalComponent<T> = (props: (T extends { $props: infer Props } ? Props : {}), ctx?: any) => import('vue/jsx-runtime').JSX.Element & {
+	type __VLS_FunctionalComponent<T> = (props: (T extends { $props: infer Props } ? Props : {}), ctx?: any) => globalThis.JSX.Element & {
 		__ctx?: {
 			attrs?: any;
 			slots?: T extends { $slots: infer Slots } ? Slots : Record<string, any>;
